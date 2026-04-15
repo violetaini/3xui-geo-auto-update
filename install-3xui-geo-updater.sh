@@ -144,7 +144,7 @@ create_temp_swapfile() {
   mkswap "$swapfile" >/dev/null
   swapon "$swapfile"
 
-  if ! grep -q '^/swapfile none swap sw 0 0' /etc/fstab 2>/dev/null; then
+  if ! grep -q '^/swapfile none swap sw 0 0$' /etc/fstab 2>/dev/null; then
     echo '/swapfile none swap sw 0 0' >> /etc/fstab
   fi
 
@@ -205,11 +205,15 @@ maybe_enable_temp_swap_for_anolis() {
   fi
 
   echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。"
-  echo "建议创建 1024MB 的 /swapfile，并写入 /etc/fstab。"
+  echo "建议先创建 1024MB 的 /swapfile，并写入 /etc/fstab。"
 
-  if prompt_yes_no "是否现在创建 1G swap 并继续安装？[y/N]: "; then
+  if prompt_yes_no "是否现在创建 1G swap？创建完成后你需要重新运行本安装脚本。[y/N]: "; then
     create_temp_swapfile 1024
     echo "swap 已创建并通过校验。"
+    echo
+    echo "请现在重新执行安装命令："
+    echo "curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh"
+    exit 0
   else
     echo "已取消自动创建 swap。"
     echo "请手动创建 swap 后再运行本脚本。"
