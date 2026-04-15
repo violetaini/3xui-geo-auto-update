@@ -104,7 +104,7 @@ install_cron_package() {
       apt-get update
       DEBIAN_FRONTEND=noninteractive apt-get install -y cron
       ;;
-    rhel|centos|rocky|almalinux|fedora)
+    rhel|centos|rocky|almalinux|fedora|anolis)
       if command -v dnf >/dev/null 2>&1; then
         dnf install -y cronie
       else
