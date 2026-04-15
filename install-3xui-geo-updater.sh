@@ -127,7 +127,7 @@ prompt_yes_no() {
 
 create_temp_swapfile() {
   local swapfile="${1:-/swapfile_3xui_geo}"
-  local size_mb="${2:-1024}"
+  local size_mb="${2:-2048}"
 
   if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$swapfile"; then
     return 0
@@ -139,14 +139,17 @@ create_temp_swapfile() {
   fi
 
   if command -v fallocate >/dev/null 2>&1; then
-    fallocate -l "${size_mb}M" "$swapfile" || dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=none
+    fallocate -l "${size_mb}M" "$swapfile" || dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=progress
   else
-    dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=none
+    dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=progress
   fi
 
   chmod 600 "$swapfile"
   mkswap "$swapfile" >/dev/null
   swapon "$swapfile"
+
+  sync
+  sleep 2
 }
 
 is_anolis_os() {
@@ -157,10 +160,11 @@ is_anolis_os() {
 }
 
 maybe_enable_temp_swap_for_anolis() {
-  local free_gb mem_kb swap_kb
+  local free_gb mem_kb swap_kb swap_mb
   free_gb=0
   mem_kb=0
   swap_kb=0
+  swap_mb=2048
 
   if ! is_anolis_os; then
     return 0
@@ -189,17 +193,57 @@ maybe_enable_temp_swap_for_anolis() {
     exit 1
   fi
 
+  if [[ "$free_gb" -lt 8 ]]; then
+    swap_mb=1024
+  else
+    swap_mb=2048
+  fi
+
   echo "当前环境下，yum/dnf 安装 cronie 可能因内存不足被 OOM killer 杀掉。"
-  echo "可为本次安装临时创建 1GB swap（默认不写入 /etc/fstab，重启后不会自动保留）。"
+  echo "可为本次安装临时创建 ${swap_mb}MB swap（默认不写入 /etc/fstab，重启后不会自动保留）。"
 
   if prompt_yes_no "是否现在创建临时 swap 并继续安装？[y/N]: "; then
-    create_temp_swapfile "/swapfile_3xui_geo" 1024
+    create_temp_swapfile "/swapfile_3xui_geo" "$swap_mb"
     echo "临时 swap 已启用。"
+    echo "正在准备安装 cronie，低配主机可能会持续几分钟，请耐心等待..."
+    sleep 2
   else
     echo "已取消自动创建 swap。"
     echo "请手动创建 swap 后再运行本脚本。"
     exit 1
   fi
+}
+
+install_cronie_rhel_like() {
+  local opts=(
+    -y
+    --setopt=install_weak_deps=False
+    --setopt=max_parallel_downloads=1
+    --noplugins
+  )
+
+  maybe_enable_temp_swap_for_anolis
+
+  if command -v microdnf >/dev/null 2>&1; then
+    echo "使用 microdnf 安装 cronie ..."
+    microdnf install -y cronie
+    return 0
+  fi
+
+  if command -v yum >/dev/null 2>&1; then
+    echo "使用 yum 安装 cronie ..."
+    yum "${opts[@]}" install cronie
+    return 0
+  fi
+
+  if command -v dnf >/dev/null 2>&1; then
+    echo "使用 dnf 安装 cronie ..."
+    dnf "${opts[@]}" install cronie
+    return 0
+  fi
+
+  echo "错误: 未找到可用的包管理器（microdnf / yum / dnf）。"
+  exit 1
 }
 
 install_cron_package() {
@@ -224,41 +268,14 @@ install_cron_package() {
       return 0
       ;;
     anolis|rhel|centos|rocky|almalinux|fedora|ol)
-      maybe_enable_temp_swap_for_anolis
-
-      if command -v yum >/dev/null 2>&1; then
-        yum -y install cronie
-        return 0
-      fi
-      if command -v microdnf >/dev/null 2>&1; then
-        microdnf install -y cronie
-        return 0
-      fi
-      if command -v dnf >/dev/null 2>&1; then
-        dnf -y --setopt=install_weak_deps=False install cronie
-        return 0
-      fi
-
-      echo "错误: 未找到可用的包管理器（yum / microdnf / dnf）。"
-      exit 1
+      install_cronie_rhel_like
+      return 0
       ;;
   esac
 
   if [[ " $os_like " == *" rhel "* || " $os_like " == *" centos "* || " $os_like " == *" fedora "* ]]; then
-    maybe_enable_temp_swap_for_anolis
-
-    if command -v yum >/dev/null 2>&1; then
-      yum -y install cronie
-      return 0
-    fi
-    if command -v microdnf >/dev/null 2>&1; then
-      microdnf install -y cronie
-      return 0
-    fi
-    if command -v dnf >/dev/null 2>&1; then
-      dnf -y --setopt=install_weak_deps=False install cronie
-      return 0
-    fi
+    install_cronie_rhel_like
+    return 0
   fi
 
   echo "错误: 当前发行版暂未内置自动修复 cron 逻辑。"
