@@ -57,38 +57,36 @@ detect_service_manager() {
 
 find_cron_service_name() {
   local candidates=("cron" "crond" "cronie" "dcron")
-  local sm
-  sm="$(detect_service_manager)"
-
-  case "$sm" in
-    systemd)
-      local s
-      for s in "${candidates[@]}"; do
-        if systemctl list-unit-files 2>/dev/null | grep -q "^${s}\.service"; then
-          echo "$s"
-          return 0
-        fi
-      done
-      ;;
-  esac
-
   local s
+
   for s in "${candidates[@]}"; do
-    if command -v rc-service >/dev/null 2>&1; then
-      if rc-service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
+    if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+      if systemctl cat "$s" >/dev/null 2>&1 || systemctl status "$s" >/dev/null 2>&1; then
         echo "$s"
         return 0
       fi
     fi
 
     if command -v service >/dev/null 2>&1; then
-      if service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
+      if service "$s" status >/dev/null 2>&1; then
+        echo "$s"
+        return 0
+      fi
+    fi
+
+    if command -v rc-service >/dev/null 2>&1; then
+      if rc-service "$s" status >/dev/null 2>&1; then
         echo "$s"
         return 0
       fi
     fi
 
     if [[ -x "/etc/init.d/$s" ]]; then
+      echo "$s"
+      return 0
+    fi
+
+    if pgrep -x "$s" >/dev/null 2>&1; then
       echo "$s"
       return 0
     fi
@@ -183,16 +181,8 @@ ensure_cron_ready() {
     svc="$(find_cron_service_name || true)"
   fi
 
-  if [[ -z "$svc" ]]; then
-    echo "错误: 未检测到可用的 cron 服务（cron / crond / cronie / dcron）。"
-    echo "请手动检查系统后再运行本脚本。"
-    exit 1
-  fi
-
-  if ! start_and_enable_cron_service "$svc"; then
-    echo "错误: 已检测到 cron 服务 '$svc'，但未能成功启动。"
-    echo "请手动检查后再运行本脚本。"
-    exit 1
+  if [[ -n "$svc" ]]; then
+    start_and_enable_cron_service "$svc" >/dev/null 2>&1 || true
   fi
 }
 
@@ -606,7 +596,7 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
-require_cmd crontab grep awk
+require_cmd grep awk
 
 read -rp "$(t confirm) " ans
 case "$ans" in
@@ -618,12 +608,14 @@ case "$ans" in
     ;;
 esac
 
-current="$(crontab -l 2>/dev/null || true)"
-printf '%s\n' "$current" \
-  | grep -Fv "$CRON_MARK" \
-  | grep -Fv "/usr/local/bin/3xui-geo-runner.sh" \
-  | awk 'NF' \
-  | crontab -
+if command -v crontab >/dev/null 2>&1; then
+  current="$(crontab -l 2>/dev/null || true)"
+  printf '%s\n' "$current" \
+    | grep -Fv "$CRON_MARK" \
+    | grep -Fv "/usr/local/bin/3xui-geo-runner.sh" \
+    | awk 'NF' \
+    | crontab -
+fi
 
 rm -f "$RUNNER" "$MANAGER" "$UNINSTALLER" "$WRAPPER_SHORT" "$WRAPPER_ALT"
 rm -f "$CONFIG" "$LOG_FILE"
@@ -667,17 +659,8 @@ require_cmd() {
   done
 }
 
-get_os_id() {
-  if [[ -r /etc/os-release ]]; then
-    . /etc/os-release
-    echo "${ID:-}"
-    return 0
-  fi
-  echo ""
-}
-
 detect_service_manager() {
-  if command -v systemctl >/dev/null 2>&1; then
+  if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
     echo "systemd"
     return 0
   fi
@@ -694,38 +677,40 @@ detect_service_manager() {
 
 find_cron_service_name() {
   local candidates=("cron" "crond" "cronie" "dcron")
-  local sm
-  sm="$(detect_service_manager)"
+  local s
 
-  case "$sm" in
-    systemd)
-      local s
-      for s in "${candidates[@]}"; do
-        if systemctl list-unit-files 2>/dev/null | grep -q "^${s}\.service"; then
-          echo "$s"
-          return 0
-        fi
-      done
-      ;;
-    openrc)
-      local s
-      for s in "${candidates[@]}"; do
-        if rc-service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
-          echo "$s"
-          return 0
-        fi
-      done
-      ;;
-    sysv)
-      local s
-      for s in "${candidates[@]}"; do
-        if service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
-          echo "$s"
-          return 0
-        fi
-      done
-      ;;
-  esac
+  for s in "${candidates[@]}"; do
+    if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+      if systemctl cat "$s" >/dev/null 2>&1 || systemctl status "$s" >/dev/null 2>&1; then
+        echo "$s"
+        return 0
+      fi
+    fi
+
+    if command -v service >/dev/null 2>&1; then
+      if service "$s" status >/dev/null 2>&1; then
+        echo "$s"
+        return 0
+      fi
+    fi
+
+    if command -v rc-service >/dev/null 2>&1; then
+      if rc-service "$s" status >/dev/null 2>&1; then
+        echo "$s"
+        return 0
+      fi
+    fi
+
+    if [[ -x "/etc/init.d/$s" ]]; then
+      echo "$s"
+      return 0
+    fi
+
+    if pgrep -x "$s" >/dev/null 2>&1; then
+      echo "$s"
+      return 0
+    fi
+  done
 
   return 1
 }
@@ -740,40 +725,30 @@ start_and_enable_cron_service() {
       systemctl enable "$svc" >/dev/null 2>&1 || true
       systemctl start "$svc" >/dev/null 2>&1 || true
       systemctl is-active --quiet "$svc"
+      return $?
       ;;
     openrc)
       rc-update add "$svc" default >/dev/null 2>&1 || true
       rc-service "$svc" start >/dev/null 2>&1 || true
       rc-service "$svc" status >/dev/null 2>&1
+      return $?
       ;;
     sysv)
       service "$svc" start >/dev/null 2>&1 || true
       service "$svc" status >/dev/null 2>&1
+      return $?
       ;;
     *)
-      return 1
       ;;
   esac
-}
 
-check_cron_ready() {
-  local svc=""
-
-  if ! command -v crontab >/dev/null 2>&1; then
-    echo "$(printf "$(t dep_missing)" "crontab")"
-    exit 1
+  if [[ -x "/etc/init.d/$svc" ]]; then
+    "/etc/init.d/$svc" start >/dev/null 2>&1 || true
+    "/etc/init.d/$svc" status >/dev/null 2>&1
+    return $?
   fi
 
-  svc="$(find_cron_service_name || true)"
-  if [[ -z "$svc" ]]; then
-    echo "错误: 未检测到 cron 服务，请先安装并启动后再使用。"
-    exit 1
-  fi
-
-  if ! start_and_enable_cron_service "$svc"; then
-    echo "错误: cron 服务 '$svc' 未运行，且自动启动失败。"
-    exit 1
-  fi
+  return 1
 }
 
 load_config() {
@@ -1189,6 +1164,26 @@ t() {
   esac
 }
 
+ensure_crontab_available() {
+  if ! command -v crontab >/dev/null 2>&1; then
+    echo "$(printf "$(t dep_missing)" "crontab")"
+    return 1
+  fi
+  return 0
+}
+
+check_cron_ready() {
+  local svc=""
+  if ! command -v crontab >/dev/null 2>&1; then
+    return 1
+  fi
+  svc="$(find_cron_service_name || true)"
+  if [[ -n "$svc" ]]; then
+    start_and_enable_cron_service "$svc" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+
 weekday_name_local() {
   case "$1" in
     1) echo "$(t weekday_mon)" ;;
@@ -1264,6 +1259,11 @@ install_cron() {
     printf '%s\n' "$current"
     printf '%s\n' "$line"
   } | awk 'NF' | crontab -
+
+  if ! crontab -l 2>/dev/null | grep -Fq "/usr/local/bin/3xui-geo-runner.sh"; then
+    echo "错误: 定时任务写入失败。"
+    return 1
+  fi
 }
 
 remove_cron() {
@@ -1308,7 +1308,11 @@ show_config() {
   echo "  $(lang_name_local "$LANGUAGE")"
   echo
   echo "$(t current_cron):"
-  crontab -l 2>/dev/null | grep -F "$CRON_MARK" || echo "  $(t not_set)"
+  if command -v crontab >/dev/null 2>&1; then
+    crontab -l 2>/dev/null | grep -F "$CRON_MARK" || echo "  $(t not_set)"
+  else
+    echo "  $(t not_set)"
+  fi
   echo
   echo "$(t log_file):"
   echo "  $LOG_FILE"
@@ -1507,10 +1511,19 @@ switch_language() {
 }
 
 setup_task() {
+  if ! ensure_crontab_available; then
+    return 1
+  fi
+
+  check_cron_ready || true
+
   choose_sources
   choose_schedule
   save_config
-  install_cron
+
+  if ! install_cron; then
+    return 1
+  fi
 
   echo
   echo "========== $(t saved) =========="
@@ -1571,8 +1584,10 @@ main_menu() {
       4) show_config ;;
       5) switch_language ;;
       6)
-        remove_cron
-        echo "$(t remove_task_done)"
+        if ensure_crontab_available; then
+          remove_cron
+          echo "$(t remove_task_done)"
+        fi
         ;;
       7)
         bash "$UNINSTALLER"
@@ -1587,7 +1602,6 @@ main_menu() {
 load_config
 require_root
 require_cmd grep awk tail
-check_cron_ready
 ensure_initial_language
 touch "$LOG_FILE"
 main_menu
