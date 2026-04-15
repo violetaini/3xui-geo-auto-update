@@ -84,6 +84,11 @@ This project adds:
 
 ## Installation
 
+### Quick install
+
+```bash
+curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && sudo bash install-3xui-geo-updater.sh
+```
 ### 1. Download the installer
 
 Place the installer script on your server, for example:
