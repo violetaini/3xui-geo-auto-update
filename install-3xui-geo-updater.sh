@@ -126,8 +126,8 @@ prompt_yes_no() {
 }
 
 create_temp_swapfile() {
-  local swapfile="${1:-/swapfile_3xui_geo}"
-  local size_mb="${2:-2048}"
+  local swapfile="/swapfile"
+  local size_mb="${1:-4096}"
 
   if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$swapfile"; then
     return 0
@@ -138,18 +138,31 @@ create_temp_swapfile() {
     rm -f "$swapfile"
   fi
 
-  if command -v fallocate >/dev/null 2>&1; then
-    fallocate -l "${size_mb}M" "$swapfile" || dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=progress
-  else
-    dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=progress
-  fi
-
+  echo "正在创建 swap 文件: $swapfile (${size_mb}MB)"
+  dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=progress
   chmod 600 "$swapfile"
   mkswap "$swapfile" >/dev/null
   swapon "$swapfile"
 
+  if ! grep -q '^/swapfile ' /etc/fstab 2>/dev/null; then
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  fi
+
+  sysctl -w vm.swappiness=80 >/dev/null 2>&1 || true
   sync
   sleep 2
+
+  echo "swap 校验结果："
+  swapon --show || true
+  free -h || true
+  grep -E 'SwapTotal|SwapFree' /proc/meminfo || true
+
+  local swap_total
+  swap_total="$(awk '/SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  if [[ "${swap_total:-0}" -le 0 ]]; then
+    echo "错误: swap 创建后仍未生效，已停止继续安装。"
+    exit 1
+  fi
 }
 
 is_anolis_os() {
@@ -164,7 +177,7 @@ maybe_enable_temp_swap_for_anolis() {
   free_gb=0
   mem_kb=0
   swap_kb=0
-  swap_mb=2048
+  swap_mb=4096
 
   if ! is_anolis_os; then
     return 0
@@ -194,19 +207,17 @@ maybe_enable_temp_swap_for_anolis() {
   fi
 
   if [[ "$free_gb" -lt 8 ]]; then
-    swap_mb=1024
-  else
     swap_mb=2048
+  else
+    swap_mb=4096
   fi
 
-  echo "当前环境下，yum/dnf 安装 cronie 可能因内存不足被 OOM killer 杀掉。"
-  echo "可为本次安装临时创建 ${swap_mb}MB swap（默认不写入 /etc/fstab，重启后不会自动保留）。"
+  echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。"
+  echo "建议创建 ${swap_mb}MB 的 /swapfile，并写入 /etc/fstab。"
 
-  if prompt_yes_no "是否现在创建临时 swap 并继续安装？[y/N]: "; then
-    create_temp_swapfile "/swapfile_3xui_geo" "$swap_mb"
-    echo "临时 swap 已启用。"
-    echo "正在准备安装 cronie，低配主机可能会持续几分钟，请耐心等待..."
-    sleep 2
+  if prompt_yes_no "是否现在创建 swap 并继续安装？[y/N]: "; then
+    create_temp_swapfile "$swap_mb"
+    echo "swap 已创建并通过校验。"
   else
     echo "已取消自动创建 swap。"
     echo "请手动创建 swap 后再运行本脚本。"
@@ -215,13 +226,6 @@ maybe_enable_temp_swap_for_anolis() {
 }
 
 install_cronie_rhel_like() {
-  local opts=(
-    -y
-    --setopt=install_weak_deps=False
-    --setopt=max_parallel_downloads=1
-    --noplugins
-  )
-
   maybe_enable_temp_swap_for_anolis
 
   if command -v microdnf >/dev/null 2>&1; then
@@ -232,13 +236,13 @@ install_cronie_rhel_like() {
 
   if command -v yum >/dev/null 2>&1; then
     echo "使用 yum 安装 cronie ..."
-    yum "${opts[@]}" install cronie
+    yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
     return 0
   fi
 
   if command -v dnf >/dev/null 2>&1; then
     echo "使用 dnf 安装 cronie ..."
-    dnf "${opts[@]}" install cronie
+    dnf -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
     return 0
   fi
 
