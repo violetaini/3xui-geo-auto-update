@@ -288,8 +288,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-If you want stronger patent and contributor protections, you may consider Apache-2.0 instead.
-
 ## Recommended Repository Structure
 
 ```text
