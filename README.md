@@ -1,7 +1,7 @@
 # 3xui Geo Updater
 
 A lightweight, multilingual Geo file auto-updater for **3x-ui**, with source selection, scheduled updates, logging, and safe restart behavior.
-
+![Main Menu Preview](screenshots/main-menu-preview.png)
 This tool helps keep Geo-related rule files up to date for 3x-ui-based deployments while avoiding unnecessary restarts. It supports multiple upstream sources, flexible scheduling, a simple command-line menu, and restarts **only when files actually change**.
 
 ## Features
