@@ -89,14 +89,14 @@ This project adds:
 Place the installer script on your server, for example:
 
 ```bash
-curl -O https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPOSITORY/main/install-3xui-geo-updater.sh
+curl -O https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh
 ```
 
 Or clone the repository:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
-cd YOUR_REPOSITORY
+git clone https://github.com/violetaini/3xui-geo-auto-update.git
+cd 3xui-geo-auto-update
 ```
 
 ### 2. Make it executable
