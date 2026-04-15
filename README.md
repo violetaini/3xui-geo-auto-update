@@ -91,7 +91,7 @@ This project adds:
 ### Quick install
 
 ```bash
-curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && sudo bash install-3xui-geo-updater.sh
+curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
 
 ### 1. Download the installer
@@ -99,13 +99,13 @@ curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/vio
 Place the installer script on your server, for example:
 
 ```bash
-curl -O [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh)
+curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh
 ```
 
 Or clone the repository:
 
 ```bash
-git clone [https://github.com/violetaini/3xui-geo-auto-update.git](https://github.com/violetaini/3xui-geo-auto-update.git)
+git clone https://github.com/violetaini/3xui-geo-auto-update.git
 cd 3xui-geo-auto-update
 ```
 
