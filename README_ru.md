@@ -1,7 +1,11 @@
 # 3xui Geo Updater
 
+[English](README.md) | [简体中文](README_zh.md) | [Русский](README_ru.md) | [فارسی](README_fa.md)
+
 Легкое мультиязычное средство автоматического обновления файлов Geo для **3x-ui**, с выбором источника, планированием обновлений, ведением логов и безопасным перезапуском.
-![Предпросмотр главного меню](screenshots/main-menu-preview.png)
+
+![Main Menu Preview](screenshots/main-menu-preview.png)
+
 Этот инструмент помогает поддерживать файлы правил Geo в актуальном состоянии для серверов на базе 3x-ui, избегая при этом ненужных перезапусков. Он поддерживает несколько источников, гибкое расписание, простое меню командной строки и перезапускает службу **только в том случае, если файлы действительно изменились**.
 
 ## Особенности
@@ -26,6 +30,7 @@
 - Быстрые команды:
   - `xgeo`
   - `3xui-geo`
+- Автоматическая установка и восстановление запуска cron для основных дистрибутивов Linux
 
 ## Поддерживаемые источники
 
@@ -82,12 +87,15 @@
   - `date`
   - `xargs`
 
+Этот установщик в основном опирается на общие утилиты Linux, которые обычно доступны в стандартных системах Linux.
+В основных дистрибутивах Linux установщик автоматически попытается установить и запустить cron, если он отсутствует.
+
 ## Установка
 
 ### Быстрая установка
-
+В основных дистрибутивах Linux установщик автоматически попытается установить и запустить cron, если он отсутствует.
 ```bash
-curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
+curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
 
 ### 1. Скачайте скрипт установки
@@ -95,13 +103,13 @@ curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/viol
 Загрузите скрипт установки на ваш сервер, например:
 
 ```bash
-curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh
+curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh)
 ```
 
 Или клонируйте репозиторий:
 
 ```bash
-git clone https://github.com/violetaini/3xui-geo-auto-update.git
+git clone [https://github.com/violetaini/3xui-geo-auto-update.git](https://github.com/violetaini/3xui-geo-auto-update.git)
 cd 3xui-geo-auto-update
 ```
 
@@ -216,6 +224,8 @@ tail -f /var/log/3xui-geo-updater.log
 - Перезапуск только при фактическом изменении файлов
 - Блокировка процесса для предотвращения одновременного выполнения
 - Проверка зависимостей перед выполнением
+- Автоматическая установка и восстановление запуска cron в основных дистрибутивах Linux
+- Дедупликация запланированных задач при перенастройке
 - Выделенный скрипт для корректного удаления
 - Напоминание об очистке кэша командной оболочки после удаления
 
@@ -224,11 +234,7 @@ tail -f /var/log/3xui-geo-updater.log
 Этот проект предназначен для серверов, на которых `3x-ui` уже установлен и работает корректно.
 Он не устанавливает сам `3x-ui`.
 
-Пожалуйста, убедитесь, что:
-
-- Ваша служба x-ui функционирует
-- Ваш сервер имеет доступ к настроенным источникам
-- Вы понимаете, какие источники Geo вы хотите включить перед настройкой автоматических обновлений
+В основных семействах дистрибутивов Linux установщик автоматически попытается установить и запустить cron, если он отсутствует.
 
 ## Уведомление об открытом исходном коде и отказ от ответственности
 
@@ -264,7 +270,6 @@ tail -f /var/log/3xui-geo-updater.log
 ### Юридическое уведомление
 Этот репозиторий предназначен только для образовательных, эксплуатационных и административных целей автоматизации.
 Ничто в этом репозитории не должно толковаться как юридическая консультация, консультация по соблюдению нормативных требований или гарантия законного использования в какой-либо стране или среде.
-Если у вас есть юридические или нормативные сомнения, проконсультируйтесь с квалифицированным специалистом.
 
 ## Лицензия (License)
 
@@ -294,7 +299,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Рекомендуемая структура репозитория
+## Структура репозитория
 
 ```text
 .
