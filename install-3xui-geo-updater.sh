@@ -30,13 +30,14 @@ require_cmd() {
   done
 }
 
-get_os_id() {
+get_os_info() {
+  local id="" like=""
   if [[ -r /etc/os-release ]]; then
     . /etc/os-release
-    echo "${ID:-}"
-    return 0
+    id="${ID:-}"
+    like="${ID_LIKE:-}"
   fi
-  echo ""
+  printf '%s|%s\n' "$id" "$like"
 }
 
 detect_service_manager() {
@@ -95,9 +96,115 @@ find_cron_service_name() {
   return 1
 }
 
+get_mem_available_kb() {
+  awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
+}
+
+get_swap_free_kb() {
+  awk '/SwapFree:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
+}
+
+get_root_free_gb() {
+  df -Pk / 2>/dev/null | awk 'NR==2 {printf "%.0f", $4/1024/1024}'
+}
+
+need_swap_for_pkg_install() {
+  local mem_kb swap_kb
+  mem_kb="$(get_mem_available_kb)"
+  swap_kb="$(get_swap_free_kb)"
+  [[ "${mem_kb:-0}" -lt 393216 && "${swap_kb:-0}" -eq 0 ]]
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local ans=""
+  read -rp "$prompt" ans
+  case "$ans" in
+    y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+create_temp_swapfile() {
+  local swapfile="${1:-/swapfile_3xui_geo}"
+  local size_mb="${2:-1024}"
+
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$swapfile"; then
+    return 0
+  fi
+
+  if [[ -f "$swapfile" ]]; then
+    swapoff "$swapfile" >/dev/null 2>&1 || true
+    rm -f "$swapfile"
+  fi
+
+  if command -v fallocate >/dev/null 2>&1; then
+    fallocate -l "${size_mb}M" "$swapfile" || dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=none
+  else
+    dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=none
+  fi
+
+  chmod 600 "$swapfile"
+  mkswap "$swapfile" >/dev/null
+  swapon "$swapfile"
+}
+
+is_anolis_os() {
+  local os_info os_id
+  os_info="$(get_os_info)"
+  os_id="${os_info%%|*}"
+  [[ "$os_id" == "anolis" ]]
+}
+
+maybe_enable_temp_swap_for_anolis() {
+  local free_gb mem_kb swap_kb
+  free_gb=0
+  mem_kb=0
+  swap_kb=0
+
+  if ! is_anolis_os; then
+    return 0
+  fi
+
+  if ! need_swap_for_pkg_install; then
+    return 0
+  fi
+
+  free_gb="$(get_root_free_gb)"
+  mem_kb="$(get_mem_available_kb)"
+  swap_kb="$(get_swap_free_kb)"
+
+  free_gb="${free_gb:-0}"
+  mem_kb="${mem_kb:-0}"
+  swap_kb="${swap_kb:-0}"
+
+  echo "检测到当前系统为 Anolis，且内存较低。"
+  echo "MemAvailable: ${mem_kb} KB"
+  echo "SwapFree: ${swap_kb} KB"
+  echo "根分区剩余空间: ${free_gb} GB"
+
+  if [[ "$free_gb" -lt 5 ]]; then
+    echo "错误: 根分区剩余空间不足 5GB，不建议自动创建 swap。"
+    echo "请先清理磁盘空间，或手动创建 swap 后再运行本脚本。"
+    exit 1
+  fi
+
+  echo "当前环境下，yum/dnf 安装 cronie 可能因内存不足被 OOM killer 杀掉。"
+  echo "可为本次安装临时创建 1GB swap（默认不写入 /etc/fstab，重启后不会自动保留）。"
+
+  if prompt_yes_no "是否现在创建临时 swap 并继续安装？[y/N]: "; then
+    create_temp_swapfile "/swapfile_3xui_geo" 1024
+    echo "临时 swap 已启用。"
+  else
+    echo "已取消自动创建 swap。"
+    echo "请手动创建 swap 后再运行本脚本。"
+    exit 1
+  fi
+}
+
 install_cron_package() {
   local os_info os_id os_like
-  os_info="$(get_os_id)"
+  os_info="$(get_os_info)"
   os_id="${os_info%%|*}"
   os_like="${os_info#*|}"
 
@@ -117,6 +224,8 @@ install_cron_package() {
       return 0
       ;;
     anolis|rhel|centos|rocky|almalinux|fedora|ol)
+      maybe_enable_temp_swap_for_anolis
+
       if command -v yum >/dev/null 2>&1; then
         yum -y install cronie
         return 0
@@ -129,12 +238,15 @@ install_cron_package() {
         dnf -y --setopt=install_weak_deps=False install cronie
         return 0
       fi
+
       echo "错误: 未找到可用的包管理器（yum / microdnf / dnf）。"
       exit 1
       ;;
   esac
 
   if [[ " $os_like " == *" rhel "* || " $os_like " == *" centos "* || " $os_like " == *" fedora "* ]]; then
+    maybe_enable_temp_swap_for_anolis
+
     if command -v yum >/dev/null 2>&1; then
       yum -y install cronie
       return 0
@@ -214,9 +326,43 @@ ensure_cron_ready() {
   fi
 }
 
+ensure_xui_installed() {
+  if command -v x-ui >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ -x /usr/local/x-ui/x-ui ]]; then
+    return 0
+  fi
+
+  if [[ -f /etc/systemd/system/x-ui.service || -f /lib/systemd/system/x-ui.service ]]; then
+    return 0
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl status x-ui >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q '^x-ui\.service'; then
+      return 0
+    fi
+  fi
+
+  echo "错误: 未检测到 3x-ui / x-ui。"
+  echo "本脚本仅适用于已安装并可正常使用的 3x-ui 环境。"
+  exit 1
+}
+
+print_temp_swap_notice() {
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile_3xui_geo"; then
+    echo
+    echo "提示：本次安装已启用临时 swap：/swapfile_3xui_geo"
+    echo "如安装完成后想关闭，可执行："
+    echo "  swapoff /swapfile_3xui_geo && rm -f /swapfile_3xui_geo"
+  fi
+}
+
 need_root
 require_cmd bash curl cmp install awk grep mktemp date xargs
 ensure_cron_ready
+ensure_xui_installed
 
 cat > "$RUNNER" <<'RUNNER_EOF'
 #!/usr/bin/env bash
@@ -275,6 +421,8 @@ t() {
     zh_CN:restarted) echo "x-ui 已重启" ;;
     zh_CN:no_change) echo "未检测到任何 Geo 文件变化，本次不重启 x-ui" ;;
     zh_CN:partial_fail) echo "本次执行存在部分下载失败，请检查网络或上游仓库状态" ;;
+    zh_CN:xui_not_found) echo "未检测到 x-ui，跳过重启。请确认 3x-ui 是否已安装。" ;;
+    zh_CN:restart_failed) echo "x-ui 重启失败，请手动检查服务状态。" ;;
 
     en_US:cfg_missing) echo "Config file not found: $CONFIG" ;;
     en_US:dep_missing) echo "Missing required command: %s" ;;
@@ -292,6 +440,8 @@ t() {
     en_US:restarted) echo "x-ui restarted" ;;
     en_US:no_change) echo "No Geo file changes detected, x-ui will not restart" ;;
     en_US:partial_fail) echo "Some downloads failed. Please check network or upstream repositories" ;;
+    en_US:xui_not_found) echo "x-ui not found. Restart skipped. Please make sure 3x-ui is installed." ;;
+    en_US:restart_failed) echo "Failed to restart x-ui. Please check the service status manually." ;;
 
     ru_RU:cfg_missing) echo "Файл конфигурации не найден: $CONFIG" ;;
     ru_RU:dep_missing) echo "Отсутствует обязательная команда: %s" ;;
@@ -309,6 +459,8 @@ t() {
     ru_RU:restarted) echo "x-ui перезапущен" ;;
     ru_RU:no_change) echo "Изменений Geo-файлов нет, x-ui не будет перезапущен" ;;
     ru_RU:partial_fail) echo "Некоторые загрузки завершились неудачно. Проверьте сеть или состояние репозиториев" ;;
+    ru_RU:xui_not_found) echo "x-ui не найден. Перезапуск пропущен. Убедитесь, что 3x-ui установлен." ;;
+    ru_RU:restart_failed) echo "Не удалось перезапустить x-ui. Проверьте состояние службы вручную." ;;
 
     fa_IR:cfg_missing) echo "فایل پیکربندی پیدا نشد: $CONFIG" ;;
     fa_IR:dep_missing) echo "دستور موردنیاز پیدا نشد: %s" ;;
@@ -326,6 +478,8 @@ t() {
     fa_IR:restarted) echo "x-ui مجدداً راه‌اندازی شد" ;;
     fa_IR:no_change) echo "هیچ تغییری در فایل‌های Geo یافت نشد؛ x-ui ریستارت نمی‌شود" ;;
     fa_IR:partial_fail) echo "برخی دانلودها ناموفق بودند. شبکه یا مخازن بالادستی را بررسی کنید" ;;
+    fa_IR:xui_not_found) echo "x-ui پیدا نشد؛ راه‌اندازی مجدد رد شد. لطفاً مطمئن شوید 3x-ui نصب است." ;;
+    fa_IR:restart_failed) echo "راه‌اندازی مجدد x-ui ناموفق بود. لطفاً وضعیت سرویس را دستی بررسی کنید." ;;
 
     *) echo "$key" ;;
   esac
@@ -375,11 +529,25 @@ file_changed() {
 }
 
 restart_xui() {
-  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q '^x-ui\.service'; then
-    systemctl restart x-ui
-  else
-    x-ui restart
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl status x-ui >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q '^x-ui\.service'; then
+      systemctl restart x-ui
+      return $?
+    fi
   fi
+
+  if command -v x-ui >/dev/null 2>&1; then
+    x-ui restart
+    return $?
+  fi
+
+  if [[ -x /usr/local/x-ui/x-ui ]]; then
+    /usr/local/x-ui/x-ui restart
+    return $?
+  fi
+
+  log "$(t xui_not_found)"
+  return 1
 }
 
 should_run_now() {
@@ -536,8 +704,11 @@ main() {
 
   if [[ "$changed_any" -eq 1 ]]; then
     log "$(t changes_restart)"
-    restart_xui
-    log "$(t restarted)"
+    if restart_xui; then
+      log "$(t restarted)"
+    else
+      log "$(t restart_failed)"
+    fi
   else
     log "$(t no_change)"
   fi
@@ -1195,6 +1366,7 @@ t() {
 ensure_crontab_available() {
   if ! command -v crontab >/dev/null 2>&1; then
     echo "$(printf "$(t dep_missing)" "crontab")"
+    echo "错误: 当前系统无法写入定时任务，因为缺少 crontab 命令。"
     return 1
   fi
   return 0
@@ -1202,9 +1374,11 @@ ensure_crontab_available() {
 
 check_cron_ready() {
   local svc=""
+
   if ! command -v crontab >/dev/null 2>&1; then
     return 1
   fi
+
   svc="$(find_cron_service_name || true)"
   if [[ -n "$svc" ]]; then
     start_and_enable_cron_service "$svc" >/dev/null 2>&1 || true
@@ -1662,6 +1836,7 @@ echo "可用命令："
 echo "  xgeo                打开管理菜单"
 echo "  3xui-geo            打开管理菜单"
 echo "  xgeo uninstall      一键卸载"
+print_temp_swap_notice
 echo
 echo "现在为你启动管理菜单..."
 exec /usr/local/bin/3xui-geo-manager.sh
