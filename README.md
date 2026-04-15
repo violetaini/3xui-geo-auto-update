@@ -30,6 +30,7 @@ This tool helps keep Geo-related rule files up to date for 3x-ui-based deploymen
 - Shortcut commands:
   - `xgeo`
   - `3xui-geo`
+- Automatic cron installation and startup repair for major Linux distributions
 
 ## Supported Sources
 
@@ -85,11 +86,13 @@ This project adds:
   - `mktemp`
   - `date`
   - `xargs`
+This installer relies mostly on common Linux utilities that are usually available on standard Linux systems.
+On major Linux distributions, the installer will automatically try to install and start cron if it is missing.
 
 ## Installation
 
 ### Quick install
-
+The installer will automatically try to install and start cron on major Linux distributions if it is missing.
 ```bash
 curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
@@ -220,6 +223,8 @@ This project includes several safety-oriented behaviors:
 - Restart only on actual file changes
 - Locking to prevent concurrent runs
 - Dependency checks before execution
+- Automatic cron installation and startup repair on major Linux distributions
+- Scheduled task de-duplication during reconfiguration
 - Dedicated uninstall script
 - Shell cache reminder after uninstall
 
@@ -228,11 +233,7 @@ This project includes several safety-oriented behaviors:
 This project is intended for servers where 3x-ui is already installed and working correctly.
 It does not install 3x-ui itself.
 
-Please make sure:
-
-- Your x-ui service is functional
-- Your server can access the configured upstream source(s)
-- You understand which Geo sources you want to enable before scheduling automatic updates
+On major Linux distribution families, the installer will automatically try to install and start cron if it is missing.
 
 ## Open Source Notice and Disclaimer
 
