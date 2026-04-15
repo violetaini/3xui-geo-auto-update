@@ -40,7 +40,7 @@ get_os_id() {
 }
 
 detect_service_manager() {
-  if command -v systemctl >/dev/null 2>&1; then
+  if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
     echo "systemd"
     return 0
   fi
@@ -70,25 +70,29 @@ find_cron_service_name() {
         fi
       done
       ;;
-    openrc)
-      local s
-      for s in "${candidates[@]}"; do
-        if rc-service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
-          echo "$s"
-          return 0
-        fi
-      done
-      ;;
-    sysv)
-      local s
-      for s in "${candidates[@]}"; do
-        if service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
-          echo "$s"
-          return 0
-        fi
-      done
-      ;;
   esac
+
+  local s
+  for s in "${candidates[@]}"; do
+    if command -v rc-service >/dev/null 2>&1; then
+      if rc-service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
+        echo "$s"
+        return 0
+      fi
+    fi
+
+    if command -v service >/dev/null 2>&1; then
+      if service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
+        echo "$s"
+        return 0
+      fi
+    fi
+
+    if [[ -x "/etc/init.d/$s" ]]; then
+      echo "$s"
+      return 0
+    fi
+  done
 
   return 1
 }
@@ -134,20 +138,30 @@ start_and_enable_cron_service() {
       systemctl enable "$svc" >/dev/null 2>&1 || true
       systemctl start "$svc" >/dev/null 2>&1 || true
       systemctl is-active --quiet "$svc"
+      return $?
       ;;
     openrc)
       rc-update add "$svc" default >/dev/null 2>&1 || true
       rc-service "$svc" start >/dev/null 2>&1 || true
       rc-service "$svc" status >/dev/null 2>&1
+      return $?
       ;;
     sysv)
       service "$svc" start >/dev/null 2>&1 || true
       service "$svc" status >/dev/null 2>&1
+      return $?
       ;;
     *)
-      return 1
       ;;
   esac
+
+  if [[ -x "/etc/init.d/$svc" ]]; then
+    "/etc/init.d/$svc" start >/dev/null 2>&1 || true
+    "/etc/init.d/$svc" status >/dev/null 2>&1
+    return $?
+  fi
+
+  return 1
 }
 
 ensure_cron_ready() {
