@@ -40,6 +40,13 @@ get_os_info() {
   printf '%s|%s\n' "$id" "$like"
 }
 
+is_anolis_os() {
+  local os_info os_id
+  os_info="$(get_os_info)"
+  os_id="${os_info%%|*}"
+  [[ "$os_id" == "anolis" ]]
+}
+
 detect_service_manager() {
   if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
     echo "systemd"
@@ -125,69 +132,12 @@ prompt_yes_no() {
   esac
 }
 
-create_temp_swapfile() {
-  local swapfile="/swapfile"
-  local size_mb="${1:-1024}"
-
-  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$swapfile"; then
-    return 0
-  fi
-
-  if [[ -f "$swapfile" ]]; then
-    swapoff "$swapfile" >/dev/null 2>&1 || true
-    rm -f "$swapfile"
-  fi
-
-  echo "正在创建 swap 文件: $swapfile (${size_mb}MB)"
-  dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=progress
-  chmod 600 "$swapfile"
-  mkswap "$swapfile" >/dev/null
-  swapon "$swapfile"
-
-  if ! grep -q '^/swapfile none swap sw 0 0$' /etc/fstab 2>/dev/null; then
-    echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  fi
-
-  sync
-  sleep 2
-
-  echo "swap 校验结果："
-  swapon --show || true
-  free -h || true
-  grep -E 'SwapTotal|SwapFree' /proc/meminfo || true
-
-  local swap_total
-  swap_total="$(awk '/SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
-  if [[ "${swap_total:-0}" -le 0 ]]; then
-    echo "错误: swap 创建后仍未生效，已停止继续安装。"
-    exit 1
-  fi
-}
-
-is_anolis_os() {
-  local os_info os_id
-  os_info="$(get_os_info)"
-  os_id="${os_info%%|*}"
-  [[ "$os_id" == "anolis" ]]
-}
-
-maybe_enable_temp_swap_for_anolis() {
-  local free_gb mem_kb swap_kb
-  free_gb=0
-  mem_kb=0
-  swap_kb=0
-
-  if ! is_anolis_os; then
-    return 0
-  fi
-
-  if ! need_swap_for_pkg_install; then
-    return 0
-  fi
-
+run_aquasofts_swap_for_anolis() {
+  local free_gb mem_kb swap_kb script_path swap_total
   free_gb="$(get_root_free_gb)"
   mem_kb="$(get_mem_available_kb)"
   swap_kb="$(get_swap_free_kb)"
+  script_path="/tmp/3xui-geo-anolis-swap.sh"
 
   free_gb="${free_gb:-0}"
   mem_kb="${mem_kb:-0}"
@@ -197,6 +147,8 @@ maybe_enable_temp_swap_for_anolis() {
   echo "MemAvailable: ${mem_kb} KB"
   echo "SwapFree: ${swap_kb} KB"
   echo "根分区剩余空间: ${free_gb} GB"
+  echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。"
+  echo "将调用你已验证可用的 aquasofts/swap 脚本先创建 swap。"
 
   if [[ "$free_gb" -lt 5 ]]; then
     echo "错误: 根分区剩余空间不足 5GB，不建议自动创建 swap。"
@@ -204,26 +156,44 @@ maybe_enable_temp_swap_for_anolis() {
     exit 1
   fi
 
-  echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。"
-  echo "建议先创建 1024MB 的 /swapfile，并写入 /etc/fstab。"
-
-  if prompt_yes_no "是否现在创建 1G swap？创建完成后你需要重新运行本安装脚本。[y/N]: "; then
-    create_temp_swapfile 1024
-    echo "swap 已创建并通过校验。"
-    echo
-    echo "请现在重新执行安装命令："
-    echo "curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh"
-    exit 0
-  else
-    echo "已取消自动创建 swap。"
-    echo "请手动创建 swap 后再运行本脚本。"
+  if ! prompt_yes_no "是否现在执行 swap 脚本？执行完成后你需要重新运行本安装脚本。[y/N]: "; then
+    echo "已取消。"
     exit 1
   fi
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$script_path" https://raw.githubusercontent.com/aquasofts/swap/main/swap.sh
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$script_path" --no-check-certificate https://raw.githubusercontent.com/aquasofts/swap/main/swap.sh
+  else
+    echo "错误: 缺少 curl 或 wget，无法自动下载 swap 脚本。"
+    exit 1
+  fi
+
+  chmod +x "$script_path"
+  bash "$script_path"
+
+  sync
+  sleep 2
+
+  echo "swap 校验结果："
+  swapon --show || true
+  free -h || true
+  grep -E 'SwapTotal|SwapFree' /proc/meminfo || true
+
+  swap_total="$(awk '/SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  if [[ "${swap_total:-0}" -le 0 ]]; then
+    echo "错误: swap 脚本执行后，系统仍未检测到有效 swap。"
+    exit 1
+  fi
+
+  echo
+  echo "swap 已就绪。请现在重新执行安装命令："
+  echo "curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh"
+  exit 0
 }
 
 install_cronie_rhel_like() {
-  maybe_enable_temp_swap_for_anolis
-
   if command -v microdnf >/dev/null 2>&1; then
     echo "使用 microdnf 安装 cronie ..."
     microdnf install -y cronie
@@ -251,6 +221,10 @@ install_cron_package() {
   os_info="$(get_os_info)"
   os_id="${os_info%%|*}"
   os_like="${os_info#*|}"
+
+  if is_anolis_os && need_swap_for_pkg_install; then
+    run_aquasofts_swap_for_anolis
+  fi
 
   case "$os_id" in
     debian|ubuntu)
@@ -367,13 +341,13 @@ ensure_xui_installed() {
   exit 1
 }
 
-print_temp_swap_notice() {
+print_swap_notice() {
   if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
     echo
-    echo "提示：本次安装已启用 swap：/swapfile"
+    echo "提示：当前系统已启用 swap：/swapfile"
     echo "如后续确认不再需要，可执行："
     echo "  swapoff /swapfile"
-    echo "  sed -i '\\|^/swapfile none swap sw 0 0$|d' /etc/fstab"
+    echo "  sed -i '\\|^/swapfile |d' /etc/fstab"
     echo "  rm -f /swapfile"
   fi
 }
@@ -1855,7 +1829,7 @@ echo "可用命令："
 echo "  xgeo                打开管理菜单"
 echo "  3xui-geo            打开管理菜单"
 echo "  xgeo uninstall      一键卸载"
-print_temp_swap_notice
+print_swap_notice
 echo
 echo "现在为你启动管理菜单..."
 exec /usr/local/bin/3xui-geo-manager.sh
