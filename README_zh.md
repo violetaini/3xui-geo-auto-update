@@ -1,7 +1,11 @@
 # 3xui Geo Updater
 
+[English](README.md) | [简体中文](README_zh.md) | [Русский](README_ru.md) | [فارسی](README_fa.md)
+
 一个轻量级、多语言的 **3x-ui** Geo 文件自动更新工具，支持数据源选择、定时更新、日志记录和安全的重启机制。
-![主菜单预览](screenshots/main-menu-preview.png)
+
+![Main Menu Preview](screenshots/main-menu-preview.png)
+
 该工具可帮助基于 3x-ui 部署的环境保持 Geo 相关规则文件的最新状态，同时避免不必要的服务中断。它支持多个上游数据源、灵活的定时任务、简单的命令行菜单，并且**仅在文件实际发生变化时**才会触发重启。
 
 ## 功能特性
@@ -26,6 +30,7 @@
 - 快捷命令：
   - `xgeo`
   - `3xui-geo`
+- 自动为各大主流 Linux 发行版安装并修复 cron 服务启动
 
 ## 支持的数据源
 
@@ -82,12 +87,15 @@
   - `date`
   - `xargs`
 
+本安装程序主要依赖标准 Linux 系统上通常自带的通用实用工具。
+在主流 Linux 发行版上，如果系统缺失 cron，安装程序会自动尝试安装并启动它。
+
 ## 安装指南
 
 ### 快速安装
-
+在主流 Linux 发行版上，如果缺失 cron，安装程序会自动尝试安装并启动它。
 ```bash
-curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
+curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
 
 ### 1. 下载安装脚本
@@ -95,13 +103,13 @@ curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/viol
 将安装脚本下载到您的服务器上，例如：
 
 ```bash
-curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh
+curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh)
 ```
 
 或者克隆整个代码仓库：
 
 ```bash
-git clone https://github.com/violetaini/3xui-geo-auto-update.git
+git clone [https://github.com/violetaini/3xui-geo-auto-update.git](https://github.com/violetaini/3xui-geo-auto-update.git)
 cd 3xui-geo-auto-update
 ```
 
@@ -216,6 +224,8 @@ tail -f /var/log/3xui-geo-updater.log
 - 仅在文件实际变化时重启服务
 - 进程锁防止并发执行冲突
 - 运行前检查必要的系统依赖
+- 在主流 Linux 发行版上自动安装并修复 cron 服务启动
+- 重新配置时自动对定时任务进行去重处理
 - 提供专用的、清理彻底的卸载脚本
 - 卸载后提示清理 shell 缓存
 
@@ -224,11 +234,7 @@ tail -f /var/log/3xui-geo-updater.log
 本项目专为已经安装并正常运行 3x-ui 的服务器设计。
 它不会帮您安装 3x-ui 本身。
 
-在使用前，请确保：
-
-- 您的 x-ui 服务正在正常运行
-- 您的服务器网络可以正常访问配置的 Geo 上游数据源
-- 您清楚并了解您所选择开启的 Geo 数据源的作用
+在主流 Linux 发行版系列上，如果缺失 cron，安装程序会自动尝试安装并启动它。
 
 ## 开源声明与免责条款
 
@@ -294,7 +300,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## 推荐的仓库目录结构
+## 仓库目录结构
 
 ```text
 .
