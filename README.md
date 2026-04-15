@@ -1,7 +1,11 @@
 # 3xui Geo Updater
 
+[English](README.md) | [简体中文](README_zh.md) | [Русский](README_ru.md) | [فارسی](README_fa.md)
+
 A lightweight, multilingual Geo file auto-updater for **3x-ui**, with source selection, scheduled updates, logging, and safe restart behavior.
+
 ![Main Menu Preview](screenshots/main-menu-preview.png)
+
 This tool helps keep Geo-related rule files up to date for 3x-ui-based deployments while avoiding unnecessary restarts. It supports multiple upstream sources, flexible scheduling, a simple command-line menu, and restarts **only when files actually change**.
 
 ## Features
@@ -87,20 +91,21 @@ This project adds:
 ### Quick install
 
 ```bash
-curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && sudo bash install-3xui-geo-updater.sh
+curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && sudo bash install-3xui-geo-updater.sh
 ```
+
 ### 1. Download the installer
 
 Place the installer script on your server, for example:
 
 ```bash
-curl -O https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh
+curl -O [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh)
 ```
 
 Or clone the repository:
 
 ```bash
-git clone https://github.com/violetaini/3xui-geo-auto-update.git
+git clone [https://github.com/violetaini/3xui-geo-auto-update.git](https://github.com/violetaini/3xui-geo-auto-update.git)
 cd 3xui-geo-auto-update
 ```
 
@@ -293,14 +298,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Recommended Repository Structure
+## Repository Structure
 
 ```text
 .
 ├── install-3xui-geo-updater.sh
-├── README.md
 ├── LICENSE
+├── README.md
+├── README_fa.md
+├── README_ru.md
+├── README_zh.md
 └── screenshots/
+    └── main-menu-preview.png
 ```
 
 ## Contributing
