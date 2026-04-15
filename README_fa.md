@@ -87,7 +87,7 @@
 ### نصب سریع
 
 ```bash
-curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && sudo bash install-3xui-geo-updater.sh
+curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
 
 ### ۱. دانلود اسکریپت نصب
@@ -95,13 +95,13 @@ curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/vio
 اسکریپت نصب را روی سرور خود قرار دهید، برای مثال:
 
 ```bash
-curl -O [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh)
+curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh
 ```
 
 یا مخزن را کلون کنید:
 
 ```bash
-git clone [https://github.com/violetaini/3xui-geo-auto-update.git](https://github.com/violetaini/3xui-geo-auto-update.git)
+git clone https://github.com/violetaini/3xui-geo-auto-update.git
 cd 3xui-geo-auto-update
 ```
 
