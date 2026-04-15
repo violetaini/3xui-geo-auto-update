@@ -30,8 +30,161 @@ require_cmd() {
   done
 }
 
+get_os_id() {
+  if [[ -r /etc/os-release ]]; then
+    . /etc/os-release
+    echo "${ID:-}"
+    return 0
+  fi
+  echo ""
+}
+
+detect_service_manager() {
+  if command -v systemctl >/dev/null 2>&1; then
+    echo "systemd"
+    return 0
+  fi
+  if command -v rc-service >/dev/null 2>&1; then
+    echo "openrc"
+    return 0
+  fi
+  if command -v service >/dev/null 2>&1; then
+    echo "sysv"
+    return 0
+  fi
+  echo "unknown"
+}
+
+find_cron_service_name() {
+  local candidates=("cron" "crond" "cronie" "dcron")
+  local sm
+  sm="$(detect_service_manager)"
+
+  case "$sm" in
+    systemd)
+      local s
+      for s in "${candidates[@]}"; do
+        if systemctl list-unit-files 2>/dev/null | grep -q "^${s}\.service"; then
+          echo "$s"
+          return 0
+        fi
+      done
+      ;;
+    openrc)
+      local s
+      for s in "${candidates[@]}"; do
+        if rc-service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
+          echo "$s"
+          return 0
+        fi
+      done
+      ;;
+    sysv)
+      local s
+      for s in "${candidates[@]}"; do
+        if service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
+          echo "$s"
+          return 0
+        fi
+      done
+      ;;
+  esac
+
+  return 1
+}
+
+install_cron_package() {
+  local os_id
+  os_id="$(get_os_id)"
+
+  case "$os_id" in
+    debian|ubuntu)
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y cron
+      ;;
+    rhel|centos|rocky|almalinux|fedora)
+      if command -v dnf >/dev/null 2>&1; then
+        dnf install -y cronie
+      else
+        yum install -y cronie
+      fi
+      ;;
+    arch|manjaro|endeavouros)
+      pacman -Sy --noconfirm cronie
+      ;;
+    alpine)
+      apk update
+      apk add dcron || apk add cronie
+      ;;
+    *)
+      echo "错误: 当前发行版暂未内置自动修复 cron 逻辑。"
+      echo "请手动安装 cron/cronie 后再运行本脚本。"
+      exit 1
+      ;;
+  esac
+}
+
+start_and_enable_cron_service() {
+  local svc="$1"
+  local sm
+  sm="$(detect_service_manager)"
+
+  case "$sm" in
+    systemd)
+      systemctl enable "$svc" >/dev/null 2>&1 || true
+      systemctl start "$svc" >/dev/null 2>&1 || true
+      systemctl is-active --quiet "$svc"
+      ;;
+    openrc)
+      rc-update add "$svc" default >/dev/null 2>&1 || true
+      rc-service "$svc" start >/dev/null 2>&1 || true
+      rc-service "$svc" status >/dev/null 2>&1
+      ;;
+    sysv)
+      service "$svc" start >/dev/null 2>&1 || true
+      service "$svc" status >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+ensure_cron_ready() {
+  local svc=""
+
+  if ! command -v crontab >/dev/null 2>&1; then
+    echo "未检测到 crontab，正在尝试自动安装 cron ..."
+    install_cron_package
+  fi
+
+  if ! command -v crontab >/dev/null 2>&1; then
+    echo "错误: 自动安装后仍未检测到 crontab。"
+    exit 1
+  fi
+
+  if ! svc="$(find_cron_service_name)"; then
+    echo "未检测到 cron 服务，正在尝试安装/修复 ..."
+    install_cron_package
+    svc="$(find_cron_service_name || true)"
+  fi
+
+  if [[ -z "$svc" ]]; then
+    echo "错误: 未检测到可用的 cron 服务（cron / crond / cronie / dcron）。"
+    echo "请手动检查系统后再运行本脚本。"
+    exit 1
+  fi
+
+  if ! start_and_enable_cron_service "$svc"; then
+    echo "错误: 已检测到 cron 服务 '$svc'，但未能成功启动。"
+    echo "请手动检查后再运行本脚本。"
+    exit 1
+  fi
+}
+
 need_root
-require_cmd bash curl cmp install awk grep crontab mktemp date xargs
+require_cmd bash curl cmp install awk grep mktemp date xargs
+ensure_cron_ready
 
 cat > "$RUNNER" <<'RUNNER_EOF'
 #!/usr/bin/env bash
@@ -498,6 +651,115 @@ require_cmd() {
       exit 1
     fi
   done
+}
+
+get_os_id() {
+  if [[ -r /etc/os-release ]]; then
+    . /etc/os-release
+    echo "${ID:-}"
+    return 0
+  fi
+  echo ""
+}
+
+detect_service_manager() {
+  if command -v systemctl >/dev/null 2>&1; then
+    echo "systemd"
+    return 0
+  fi
+  if command -v rc-service >/dev/null 2>&1; then
+    echo "openrc"
+    return 0
+  fi
+  if command -v service >/dev/null 2>&1; then
+    echo "sysv"
+    return 0
+  fi
+  echo "unknown"
+}
+
+find_cron_service_name() {
+  local candidates=("cron" "crond" "cronie" "dcron")
+  local sm
+  sm="$(detect_service_manager)"
+
+  case "$sm" in
+    systemd)
+      local s
+      for s in "${candidates[@]}"; do
+        if systemctl list-unit-files 2>/dev/null | grep -q "^${s}\.service"; then
+          echo "$s"
+          return 0
+        fi
+      done
+      ;;
+    openrc)
+      local s
+      for s in "${candidates[@]}"; do
+        if rc-service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
+          echo "$s"
+          return 0
+        fi
+      done
+      ;;
+    sysv)
+      local s
+      for s in "${candidates[@]}"; do
+        if service "$s" status >/dev/null 2>&1 || [[ -x "/etc/init.d/$s" ]]; then
+          echo "$s"
+          return 0
+        fi
+      done
+      ;;
+  esac
+
+  return 1
+}
+
+start_and_enable_cron_service() {
+  local svc="$1"
+  local sm
+  sm="$(detect_service_manager)"
+
+  case "$sm" in
+    systemd)
+      systemctl enable "$svc" >/dev/null 2>&1 || true
+      systemctl start "$svc" >/dev/null 2>&1 || true
+      systemctl is-active --quiet "$svc"
+      ;;
+    openrc)
+      rc-update add "$svc" default >/dev/null 2>&1 || true
+      rc-service "$svc" start >/dev/null 2>&1 || true
+      rc-service "$svc" status >/dev/null 2>&1
+      ;;
+    sysv)
+      service "$svc" start >/dev/null 2>&1 || true
+      service "$svc" status >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+check_cron_ready() {
+  local svc=""
+
+  if ! command -v crontab >/dev/null 2>&1; then
+    echo "$(printf "$(t dep_missing)" "crontab")"
+    exit 1
+  fi
+
+  svc="$(find_cron_service_name || true)"
+  if [[ -z "$svc" ]]; then
+    echo "错误: 未检测到 cron 服务，请先安装并启动后再使用。"
+    exit 1
+  fi
+
+  if ! start_and_enable_cron_service "$svc"; then
+    echo "错误: cron 服务 '$svc' 未运行，且自动启动失败。"
+    exit 1
+  fi
 }
 
 load_config() {
@@ -1310,7 +1572,8 @@ main_menu() {
 
 load_config
 require_root
-require_cmd crontab grep awk tail
+require_cmd grep awk tail
+check_cron_ready
 ensure_initial_language
 touch "$LOG_FILE"
 main_menu
