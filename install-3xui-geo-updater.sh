@@ -452,7 +452,11 @@ case "$ans" in
 esac
 
 current="$(crontab -l 2>/dev/null || true)"
-printf '%s\n' "$current" | grep -Fv "$CRON_MARK" | awk 'NF' | crontab -
+printf '%s\n' "$current" \
+  | grep -Fv "$CRON_MARK" \
+  | grep -Fv "/usr/local/bin/3xui-geo-runner.sh" \
+  | awk 'NF' \
+  | crontab -
 
 rm -f "$RUNNER" "$MANAGER" "$UNINSTALLER" "$WRAPPER_SHORT" "$WRAPPER_ALT"
 rm -f "$CONFIG" "$LOG_FILE"
@@ -975,7 +979,10 @@ install_cron() {
   local current
 
   current="$(crontab -l 2>/dev/null || true)"
-  current="$(printf '%s\n' "$current" | grep -Fv "$CRON_MARK" || true)"
+  current="$(printf '%s\n' "$current" \
+    | grep -Fv "$CRON_MARK" \
+    | grep -Fv "/usr/local/bin/3xui-geo-runner.sh" \
+    || true)"
 
   {
     printf '%s\n' "$current"
@@ -986,7 +993,11 @@ install_cron() {
 remove_cron() {
   local current
   current="$(crontab -l 2>/dev/null || true)"
-  printf '%s\n' "$current" | grep -Fv "$CRON_MARK" | awk 'NF' | crontab -
+  printf '%s\n' "$current" \
+    | grep -Fv "$CRON_MARK" \
+    | grep -Fv "/usr/local/bin/3xui-geo-runner.sh" \
+    | awk 'NF' \
+    | crontab -
 }
 
 show_config() {
