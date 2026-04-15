@@ -87,7 +87,7 @@
 ### 快速安装
 
 ```bash
-curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && sudo bash install-3xui-geo-updater.sh
+curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
 
 ### 1. 下载安装脚本
@@ -95,13 +95,13 @@ curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/vio
 将安装脚本下载到您的服务器上，例如：
 
 ```bash
-curl -O [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh)
+curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh
 ```
 
 或者克隆整个代码仓库：
 
 ```bash
-git clone [https://github.com/violetaini/3xui-geo-auto-update.git](https://github.com/violetaini/3xui-geo-auto-update.git)
+git clone https://github.com/violetaini/3xui-geo-auto-update.git
 cd 3xui-geo-auto-update
 ```
 
