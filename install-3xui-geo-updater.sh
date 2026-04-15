@@ -127,7 +127,7 @@ prompt_yes_no() {
 
 create_temp_swapfile() {
   local swapfile="/swapfile"
-  local size_mb="${1:-4096}"
+  local size_mb="${1:-1024}"
 
   if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$swapfile"; then
     return 0
@@ -144,11 +144,10 @@ create_temp_swapfile() {
   mkswap "$swapfile" >/dev/null
   swapon "$swapfile"
 
-  if ! grep -q '^/swapfile ' /etc/fstab 2>/dev/null; then
+  if ! grep -q '^/swapfile none swap sw 0 0' /etc/fstab 2>/dev/null; then
     echo '/swapfile none swap sw 0 0' >> /etc/fstab
   fi
 
-  sysctl -w vm.swappiness=80 >/dev/null 2>&1 || true
   sync
   sleep 2
 
@@ -173,11 +172,10 @@ is_anolis_os() {
 }
 
 maybe_enable_temp_swap_for_anolis() {
-  local free_gb mem_kb swap_kb swap_mb
+  local free_gb mem_kb swap_kb
   free_gb=0
   mem_kb=0
   swap_kb=0
-  swap_mb=4096
 
   if ! is_anolis_os; then
     return 0
@@ -206,17 +204,11 @@ maybe_enable_temp_swap_for_anolis() {
     exit 1
   fi
 
-  if [[ "$free_gb" -lt 8 ]]; then
-    swap_mb=2048
-  else
-    swap_mb=4096
-  fi
-
   echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。"
-  echo "建议创建 ${swap_mb}MB 的 /swapfile，并写入 /etc/fstab。"
+  echo "建议创建 1024MB 的 /swapfile，并写入 /etc/fstab。"
 
-  if prompt_yes_no "是否现在创建 swap 并继续安装？[y/N]: "; then
-    create_temp_swapfile "$swap_mb"
+  if prompt_yes_no "是否现在创建 1G swap 并继续安装？[y/N]: "; then
+    create_temp_swapfile 1024
     echo "swap 已创建并通过校验。"
   else
     echo "已取消自动创建 swap。"
@@ -372,11 +364,13 @@ ensure_xui_installed() {
 }
 
 print_temp_swap_notice() {
-  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile_3xui_geo"; then
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
     echo
-    echo "提示：本次安装已启用临时 swap：/swapfile_3xui_geo"
-    echo "如安装完成后想关闭，可执行："
-    echo "  swapoff /swapfile_3xui_geo && rm -f /swapfile_3xui_geo"
+    echo "提示：本次安装已启用 swap：/swapfile"
+    echo "如后续确认不再需要，可执行："
+    echo "  swapoff /swapfile"
+    echo "  sed -i '\\|^/swapfile none swap sw 0 0$|d' /etc/fstab"
+    echo "  rm -f /swapfile"
   fi
 }
 
