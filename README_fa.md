@@ -299,9 +299,13 @@ SOFTWARE.
 ```text
 .
 ├── install-3xui-geo-updater.sh
-├── README.md
 ├── LICENSE
+├── README.md
+├── README_fa.md
+├── README_ru.md
+├── README_zh.md
 └── screenshots/
+    └── main-menu-preview.png
 ```
 
 ## مشارکت
