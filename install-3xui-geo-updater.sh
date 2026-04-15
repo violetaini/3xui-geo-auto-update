@@ -96,34 +96,62 @@ find_cron_service_name() {
 }
 
 install_cron_package() {
-  local os_id
-  os_id="$(get_os_id)"
+  local os_info os_id os_like
+  os_info="$(get_os_id)"
+  os_id="${os_info%%|*}"
+  os_like="${os_info#*|}"
 
   case "$os_id" in
     debian|ubuntu)
       apt-get update
       DEBIAN_FRONTEND=noninteractive apt-get install -y cron
-      ;;
-    rhel|centos|rocky|almalinux|fedora|anolis)
-      if command -v dnf >/dev/null 2>&1; then
-        dnf install -y cronie
-      else
-        yum install -y cronie
-      fi
-      ;;
-    arch|manjaro|endeavouros)
-      pacman -Sy --noconfirm cronie
+      return 0
       ;;
     alpine)
       apk update
       apk add dcron || apk add cronie
+      return 0
       ;;
-    *)
-      echo "错误: 当前发行版暂未内置自动修复 cron 逻辑。"
-      echo "请手动安装 cron/cronie 后再运行本脚本。"
+    arch|manjaro|endeavouros)
+      pacman -Sy --noconfirm cronie
+      return 0
+      ;;
+    anolis|rhel|centos|rocky|almalinux|fedora|ol)
+      if command -v yum >/dev/null 2>&1; then
+        yum -y install cronie
+        return 0
+      fi
+      if command -v microdnf >/dev/null 2>&1; then
+        microdnf install -y cronie
+        return 0
+      fi
+      if command -v dnf >/dev/null 2>&1; then
+        dnf -y --setopt=install_weak_deps=False install cronie
+        return 0
+      fi
+      echo "错误: 未找到可用的包管理器（yum / microdnf / dnf）。"
       exit 1
       ;;
   esac
+
+  if [[ " $os_like " == *" rhel "* || " $os_like " == *" centos "* || " $os_like " == *" fedora "* ]]; then
+    if command -v yum >/dev/null 2>&1; then
+      yum -y install cronie
+      return 0
+    fi
+    if command -v microdnf >/dev/null 2>&1; then
+      microdnf install -y cronie
+      return 0
+    fi
+    if command -v dnf >/dev/null 2>&1; then
+      dnf -y --setopt=install_weak_deps=False install cronie
+      return 0
+    fi
+  fi
+
+  echo "错误: 当前发行版暂未内置自动修复 cron 逻辑。"
+  echo "请手动安装 cron/cronie 后再运行本脚本。"
+  exit 1
 }
 
 start_and_enable_cron_service() {
