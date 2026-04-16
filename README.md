@@ -56,6 +56,36 @@ This project currently supports the following Geo rule sources:
    - `geoip_RU.dat`
    - `geosite_RU.dat`
 
+## Supported OS
+
+The installer is currently designed for and tested against these Linux families:
+
+- Alpine
+- Debian
+- Kali
+- Ubuntu
+- Anolis
+- RHEL
+- AlmaLinux
+- Rocky Linux
+- Oracle Linux
+- Alibaba Cloud Linux
+- OpenCloudOS
+- CentOS Stream
+- Fedora
+- openEuler
+- Arch Linux
+
+Notes:
+
+- Debian-family systems such as **Debian / Kali / Ubuntu** follow the `apt + cron` installation path
+- RHEL-like systems such as **Anolis / RHEL / AlmaLinux / Rocky / Oracle / Alibaba Cloud Linux / OpenCloudOS / CentOS Stream / Fedora / openEuler** follow the RHEL-like scheduler path
+- On supported low-memory RHEL-like systems, the installer first checks whether a usable built-in system cron already exists
+- If a usable built-in system cron exists, native system cron is used directly
+- If not, the installer automatically switches to **Supercronic**
+
+Other Linux distributions may still work if the required tools and cron environment already exist, but they are not currently primary support targets.
+
 ## How It Works
 
 The updater downloads the latest Geo files from the configured upstream source(s), compares them against the currently installed local files, and only replaces them if the file content has changed.
@@ -206,11 +236,16 @@ Used only when needed on supported low-memory RHEL-like systems.
 Currently, the installer checks the following systems for low-memory scheduler fallback:
 
 - Anolis
-- CentOS Stream
-- Oracle Linux
+- RHEL
 - AlmaLinux
 - Rocky Linux
+- Oracle Linux
+- OpenCloudOS
+- CentOS Stream
+- Fedora
+- openEuler
 - Alibaba Cloud Linux
+
 
 When total memory is below **2 GiB**, the installer will first check whether a usable built-in system cron already exists.
 
