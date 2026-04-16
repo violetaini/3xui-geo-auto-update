@@ -12,12 +12,18 @@ LOG_FILE="/var/log/3xui-geo-updater.log"
 STATE_DIR="/var/lib/3xui-geo-updater"
 CRON_MARK="# 3xui-geo-updater"
 
+SUPERCRONIC_BIN="/usr/local/bin/supercronic"
+SUPERCRONIC_CRONTAB="/etc/3xui-geo-updater.cron"
+SUPERCRONIC_SERVICE_NAME="3xui-geo-supercronic.service"
+SUPERCRONIC_SERVICE="/etc/systemd/system/${SUPERCRONIC_SERVICE_NAME}"
+
 LANGUAGE=""
 SOURCES="1"
 MODE="daily"
 CRON_SCHEDULE="0 3 * * *"
 INTERVAL_DAYS=""
 WEEKDAY="1"
+SCHEDULER_BACKEND="cron"
 
 load_installer_config() {
   if [[ -f "$CONFIG" ]]; then
@@ -26,18 +32,17 @@ load_installer_config() {
   fi
 }
 
-save_initial_config_if_missing() {
-  if [[ ! -f "$CONFIG" ]]; then
-    mkdir -p "$(dirname "$CONFIG")"
-    cat > "$CONFIG" <<EOF2
+save_installer_config() {
+  mkdir -p "$(dirname "$CONFIG")"
+  cat > "$CONFIG" <<EOF
 LANGUAGE="$LANGUAGE"
 SOURCES="$SOURCES"
 MODE="$MODE"
 CRON_SCHEDULE="$CRON_SCHEDULE"
 INTERVAL_DAYS="$INTERVAL_DAYS"
 WEEKDAY="$WEEKDAY"
-EOF2
-  fi
+SCHEDULER_BACKEND="$SCHEDULER_BACKEND"
+EOF
 }
 
 it() {
@@ -50,26 +55,12 @@ it() {
     zh_CN:invalid_input) echo "输入无效。" ;;
     zh_CN:need_root) echo "请使用 root 用户运行安装脚本。" ;;
     zh_CN:dep_missing) echo "缺少依赖命令: %s" ;;
+    zh_CN:supercronic_forced) echo "检测到低内存服务器，已强制启用 Supercronic 调度方案。" ;;
+    zh_CN:supercronic_download) echo "正在下载 Supercronic ..." ;;
+    zh_CN:supercronic_ready) echo "Supercronic 已就绪。" ;;
+    zh_CN:supercronic_arch_error) echo "错误: 当前架构暂未内置 Supercronic 下载逻辑。" ;;
     zh_CN:cron_install_try) echo "未检测到 crontab，正在尝试自动安装 cron ..." ;;
     zh_CN:cron_service_try) echo "未检测到 cron 服务，正在尝试安装/修复 ..." ;;
-    zh_CN:anolis_low_mem) echo "检测到当前系统为 Anolis，且内存较低。" ;;
-    zh_CN:mem_avail) echo "MemAvailable: %s KB" ;;
-    zh_CN:swap_free) echo "SwapFree: %s KB" ;;
-    zh_CN:root_free) echo "根分区剩余空间: %s GB" ;;
-    zh_CN:oom_risk) echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。" ;;
-    zh_CN:disk_not_enough) echo "错误: 根分区剩余空间不足 5GB，不建议自动创建 swap。" ;;
-    zh_CN:swap_confirm) echo "是否现在按成功模式创建 3G /swapfile 并继续安装？[y/N]: " ;;
-    zh_CN:swap_cancel) echo "已取消自动创建 swap。" ;;
-    zh_CN:disk_ok_continue) echo "磁盘空间足够，继续执行脚本..." ;;
-    zh_CN:swap_exists_skip) echo "检测到 /swapfile 已启用，跳过创建。" ;;
-    zh_CN:swappiness_up) echo "正在将 swappiness 调整为 100，以便安装阶段更积极使用 swap ..." ;;
-    zh_CN:swappiness_down) echo "安装成功，正在将 swappiness 调整回 30 ..." ;;
-    zh_CN:swappiness_now) echo "当前 swappiness: %s" ;;
-    zh_CN:swap_success) echo "Swap 安装成功！" ;;
-    zh_CN:swap_check) echo "swap 校验结果：" ;;
-    zh_CN:swap_invalid) echo "错误: swap 创建后仍未生效，已停止继续安装。" ;;
-    zh_CN:yum_install) echo "使用 yum 安装 cronie ..." ;;
-    zh_CN:yum_failed) echo "错误: yum 安装 cronie 失败。" ;;
     zh_CN:cron_auto_failed) echo "错误: 自动安装后仍未检测到 crontab。" ;;
     zh_CN:xui_missing1) echo "错误: 未检测到 3x-ui / x-ui。" ;;
     zh_CN:xui_missing2) echo "本脚本仅适用于已安装并可正常使用的 3x-ui 环境。" ;;
@@ -80,6 +71,10 @@ it() {
     zh_CN:start_menu) echo "现在为你启动管理菜单..." ;;
     zh_CN:swap_notice) echo "提示：当前系统已启用 swap：/swapfile" ;;
     zh_CN:swap_remove_hint) echo "如后续确认不再需要，可执行：" ;;
+    zh_CN:scheduler_backend) echo "当前调度后端" ;;
+    zh_CN:backend_cron) echo "系统 cron" ;;
+    zh_CN:backend_supercronic) echo "Supercronic" ;;
+    zh_CN:install_stuck_hint) echo "提示：如果安装过程中机器卡死或 SSH 断开，请自行手动安装 cron/cronie。" ;;
 
     en_US:choose_title) echo "Language / 语言 / Язык / زبان" ;;
     en_US:choose_text) echo "First run: please choose a language:" ;;
@@ -87,26 +82,12 @@ it() {
     en_US:invalid_input) echo "Invalid input." ;;
     en_US:need_root) echo "Please run the installer as root." ;;
     en_US:dep_missing) echo "Missing required command: %s" ;;
+    en_US:supercronic_forced) echo "A low-memory server was detected. Supercronic has been forced as the scheduler backend." ;;
+    en_US:supercronic_download) echo "Downloading Supercronic ..." ;;
+    en_US:supercronic_ready) echo "Supercronic is ready." ;;
+    en_US:supercronic_arch_error) echo "Error: Supercronic download is not built in for the current architecture." ;;
     en_US:cron_install_try) echo "crontab not found, trying to install cron ..." ;;
     en_US:cron_service_try) echo "cron service not found, trying to install/repair ..." ;;
-    en_US:anolis_low_mem) echo "Detected Anolis with low memory." ;;
-    en_US:mem_avail) echo "MemAvailable: %s KB" ;;
-    en_US:swap_free) echo "SwapFree: %s KB" ;;
-    en_US:root_free) echo "Root free space: %s GB" ;;
-    en_US:oom_risk) echo "In the current environment, installing cronie via yum/dnf can be killed by OOM due to low memory." ;;
-    en_US:disk_not_enough) echo "Error: root free space is below 5GB; automatic swap creation is not recommended." ;;
-    en_US:swap_confirm) echo "Create a 3G /swapfile using the proven method and continue? [y/N]: " ;;
-    en_US:swap_cancel) echo "Automatic swap creation canceled." ;;
-    en_US:disk_ok_continue) echo "Disk space is sufficient, continuing..." ;;
-    en_US:swap_exists_skip) echo "Detected an active /swapfile, skipping creation." ;;
-    en_US:swappiness_up) echo "Setting swappiness to 100 so the installer prefers swap more aggressively ..." ;;
-    en_US:swappiness_down) echo "Installation succeeded, restoring swappiness to 30 ..." ;;
-    en_US:swappiness_now) echo "Current swappiness: %s" ;;
-    en_US:swap_success) echo "Swap installed successfully!" ;;
-    en_US:swap_check) echo "Swap verification:" ;;
-    en_US:swap_invalid) echo "Error: swap is still not active after creation. Installation stopped." ;;
-    en_US:yum_install) echo "Installing cronie with yum ..." ;;
-    en_US:yum_failed) echo "Error: failed to install cronie with yum." ;;
     en_US:cron_auto_failed) echo "Error: crontab is still unavailable after automatic installation." ;;
     en_US:xui_missing1) echo "Error: 3x-ui / x-ui was not detected." ;;
     en_US:xui_missing2) echo "This script only works on systems where 3x-ui is already installed and usable." ;;
@@ -117,6 +98,10 @@ it() {
     en_US:start_menu) echo "Starting the manager menu now..." ;;
     en_US:swap_notice) echo "Note: swap is currently enabled at /swapfile" ;;
     en_US:swap_remove_hint) echo "If you no longer need it later, run:" ;;
+    en_US:scheduler_backend) echo "Scheduler backend" ;;
+    en_US:backend_cron) echo "System cron" ;;
+    en_US:backend_supercronic) echo "Supercronic" ;;
+    en_US:install_stuck_hint) echo "Note: if the system hangs or SSH disconnects during installation, please install cron/cronie manually." ;;
 
     ru_RU:choose_title) echo "Language / 语言 / Язык / زبان" ;;
     ru_RU:choose_text) echo "Первый запуск: выберите язык:" ;;
@@ -124,26 +109,12 @@ it() {
     ru_RU:invalid_input) echo "Неверный ввод." ;;
     ru_RU:need_root) echo "Пожалуйста, запустите установщик от root." ;;
     ru_RU:dep_missing) echo "Отсутствует обязательная команда: %s" ;;
+    ru_RU:supercronic_forced) echo "Обнаружен сервер с малым объёмом памяти. Supercronic принудительно выбран как планировщик." ;;
+    ru_RU:supercronic_download) echo "Загрузка Supercronic ..." ;;
+    ru_RU:supercronic_ready) echo "Supercronic готов." ;;
+    ru_RU:supercronic_arch_error) echo "Ошибка: для текущей архитектуры не встроена загрузка Supercronic." ;;
     ru_RU:cron_install_try) echo "crontab не найден, пытаемся установить cron ..." ;;
     ru_RU:cron_service_try) echo "Служба cron не найдена, пытаемся установить/исправить ..." ;;
-    ru_RU:anolis_low_mem) echo "Обнаружен Anolis с малым объёмом памяти." ;;
-    ru_RU:mem_avail) echo "MemAvailable: %s KB" ;;
-    ru_RU:swap_free) echo "SwapFree: %s KB" ;;
-    ru_RU:root_free) echo "Свободное место на корне: %s GB" ;;
-    ru_RU:oom_risk) echo "В текущей среде установка cronie через yum/dnf может быть убита OOM из-за нехватки памяти." ;;
-    ru_RU:disk_not_enough) echo "Ошибка: свободное место на корне меньше 5GB; автоматически создавать swap не рекомендуется." ;;
-    ru_RU:swap_confirm) echo "Создать 3G /swapfile по проверенной схеме и продолжить? [y/N]: " ;;
-    ru_RU:swap_cancel) echo "Автоматическое создание swap отменено." ;;
-    ru_RU:disk_ok_continue) echo "Места на диске достаточно, продолжаем..." ;;
-    ru_RU:swap_exists_skip) echo "Обнаружен активный /swapfile, создание пропущено." ;;
-    ru_RU:swappiness_up) echo "Устанавливаем swappiness=100, чтобы во время установки система активнее использовала swap ..." ;;
-    ru_RU:swappiness_down) echo "Установка успешна, возвращаем swappiness к 30 ..." ;;
-    ru_RU:swappiness_now) echo "Текущее значение swappiness: %s" ;;
-    ru_RU:swap_success) echo "Swap успешно установлен!" ;;
-    ru_RU:swap_check) echo "Проверка swap:" ;;
-    ru_RU:swap_invalid) echo "Ошибка: swap не активировался после создания. Установка остановлена." ;;
-    ru_RU:yum_install) echo "Устанавливаем cronie через yum ..." ;;
-    ru_RU:yum_failed) echo "Ошибка: не удалось установить cronie через yum." ;;
     ru_RU:cron_auto_failed) echo "Ошибка: после автоматической установки crontab всё ещё недоступен." ;;
     ru_RU:xui_missing1) echo "Ошибка: 3x-ui / x-ui не обнаружен." ;;
     ru_RU:xui_missing2) echo "Этот скрипт работает только в среде, где 3x-ui уже установлен и доступен." ;;
@@ -154,6 +125,10 @@ it() {
     ru_RU:start_menu) echo "Запускаем меню управления..." ;;
     ru_RU:swap_notice) echo "Примечание: swap сейчас включён в /swapfile" ;;
     ru_RU:swap_remove_hint) echo "Если позже он станет не нужен, выполните:" ;;
+    ru_RU:scheduler_backend) echo "Текущий backend планировщика" ;;
+    ru_RU:backend_cron) echo "Системный cron" ;;
+    ru_RU:backend_supercronic) echo "Supercronic" ;;
+    ru_RU:install_stuck_hint) echo "Примечание: если во время установки система зависнет или SSH оборвётся, установите cron/cronie вручную." ;;
 
     fa_IR:choose_title) echo "Language / 语言 / Язык / زبان" ;;
     fa_IR:choose_text) echo "برای اولین اجرا، لطفاً زبان را انتخاب کنید:" ;;
@@ -161,26 +136,12 @@ it() {
     fa_IR:invalid_input) echo "ورودی نامعتبر است." ;;
     fa_IR:need_root) echo "لطفاً نصب‌کننده را با کاربر root اجرا کنید." ;;
     fa_IR:dep_missing) echo "دستور موردنیاز پیدا نشد: %s" ;;
+    fa_IR:supercronic_forced) echo "سرور کم‌حافظه شناسایی شد و Supercronic به‌صورت اجباری به‌عنوان زمان‌بند فعال شد." ;;
+    fa_IR:supercronic_download) echo "در حال دانلود Supercronic ..." ;;
+    fa_IR:supercronic_ready) echo "Supercronic آماده است." ;;
+    fa_IR:supercronic_arch_error) echo "خطا: برای معماری فعلی، دانلود Supercronic در اسکریپت تعبیه نشده است." ;;
     fa_IR:cron_install_try) echo "crontab پیدا نشد، در حال تلاش برای نصب cron ..." ;;
     fa_IR:cron_service_try) echo "سرویس cron پیدا نشد، در حال تلاش برای نصب/تعمیر ..." ;;
-    fa_IR:anolis_low_mem) echo "سیستم Anolis با حافظه کم شناسایی شد." ;;
-    fa_IR:mem_avail) echo "MemAvailable: %s KB" ;;
-    fa_IR:swap_free) echo "SwapFree: %s KB" ;;
-    fa_IR:root_free) echo "فضای آزاد ریشه: %s GB" ;;
-    fa_IR:oom_risk) echo "در این شرایط، نصب cronie با yum/dnf ممکن است به‌دلیل کمبود حافظه توسط OOM متوقف شود." ;;
-    fa_IR:disk_not_enough) echo "خطا: فضای آزاد ریشه کمتر از 5GB است؛ ایجاد خودکار swap توصیه نمی‌شود." ;;
-    fa_IR:swap_confirm) echo "آیا /swapfile سه گیگابایتی با روش موفق ایجاد شود و ادامه دهیم؟ [y/N]: " ;;
-    fa_IR:swap_cancel) echo "ایجاد خودکار swap لغو شد." ;;
-    fa_IR:disk_ok_continue) echo "فضای دیسک کافی است، ادامه می‌دهیم..." ;;
-    fa_IR:swap_exists_skip) echo "یک /swapfile فعال شناسایی شد؛ ایجاد مجدد رد شد." ;;
-    fa_IR:swappiness_up) echo "در حال تنظیم swappiness روی 100 تا سیستم هنگام نصب بیشتر از swap استفاده کند ..." ;;
-    fa_IR:swappiness_down) echo "نصب موفق بود، در حال بازگرداندن swappiness به 30 ..." ;;
-    fa_IR:swappiness_now) echo "swappiness فعلی: %s" ;;
-    fa_IR:swap_success) echo "Swap با موفقیت نصب شد!" ;;
-    fa_IR:swap_check) echo "بررسی swap:" ;;
-    fa_IR:swap_invalid) echo "خطا: بعد از ایجاد، swap فعال نشد. نصب متوقف شد." ;;
-    fa_IR:yum_install) echo "در حال نصب cronie با yum ..." ;;
-    fa_IR:yum_failed) echo "خطا: نصب cronie با yum ناموفق بود." ;;
     fa_IR:cron_auto_failed) echo "خطا: بعد از نصب خودکار، crontab هنوز در دسترس نیست." ;;
     fa_IR:xui_missing1) echo "خطا: 3x-ui / x-ui شناسایی نشد." ;;
     fa_IR:xui_missing2) echo "این اسکریپت فقط در محیطی کار می‌کند که 3x-ui از قبل نصب و قابل استفاده باشد." ;;
@@ -191,6 +152,10 @@ it() {
     fa_IR:start_menu) echo "در حال اجرای منوی مدیریت..." ;;
     fa_IR:swap_notice) echo "نکته: هم‌اکنون swap در /swapfile فعال است" ;;
     fa_IR:swap_remove_hint) echo "اگر بعداً دیگر به آن نیاز نداشتید، اجرا کنید:" ;;
+    fa_IR:scheduler_backend) echo "بک‌اند زمان‌بندی فعلی" ;;
+    fa_IR:backend_cron) echo "cron سیستمی" ;;
+    fa_IR:backend_supercronic) echo "Supercronic" ;;
+    fa_IR:install_stuck_hint) echo "نکته: اگر هنگام نصب سیستم گیر کرد یا اتصال SSH قطع شد، لطفاً cron/cronie را به‌صورت دستی نصب کنید." ;;
 
     *) echo "$key" ;;
   esac
@@ -224,7 +189,7 @@ init_installer_language() {
     LANGUAGE="zh_CN"
     bootstrap_language
   fi
-  save_initial_config_if_missing
+  save_installer_config
 }
 
 need_root() {
@@ -254,13 +219,6 @@ get_os_info() {
   printf '%s|%s\n' "$id" "$like"
 }
 
-is_anolis_os() {
-  local os_info os_id
-  os_info="$(get_os_info)"
-  os_id="${os_info%%|*}"
-  [[ "$os_id" == "anolis" ]]
-}
-
 detect_service_manager() {
   if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
     echo "systemd"
@@ -280,7 +238,6 @@ detect_service_manager() {
 find_cron_service_name() {
   local candidates=("cron" "crond" "cronie" "dcron")
   local s
-
   for s in "${candidates[@]}"; do
     if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
       if systemctl cat "$s" >/dev/null 2>&1 || systemctl status "$s" >/dev/null 2>&1; then
@@ -288,203 +245,178 @@ find_cron_service_name() {
         return 0
       fi
     fi
-
     if command -v service >/dev/null 2>&1; then
       if service "$s" status >/dev/null 2>&1; then
         echo "$s"
         return 0
       fi
     fi
-
     if command -v rc-service >/dev/null 2>&1; then
       if rc-service "$s" status >/dev/null 2>&1; then
         echo "$s"
         return 0
       fi
     fi
-
     if [[ -x "/etc/init.d/$s" ]]; then
       echo "$s"
       return 0
     fi
-
     if pgrep -x "$s" >/dev/null 2>&1; then
       echo "$s"
       return 0
     fi
   done
-
   return 1
 }
 
-get_mem_available_kb() {
-  awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
+get_mem_total_kb() {
+  awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
 }
 
-get_swap_total_kb() {
-  awk '/SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
-}
-
-get_swap_free_kb() {
-  awk '/SwapFree:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
-}
-
-get_root_free_gb() {
-  df -Pk / 2>/dev/null | awk 'NR==2 {printf "%.0f", $4/1024/1024}'
-}
-
-need_swap_for_pkg_install() {
-  local mem_kb swap_total_kb
-  mem_kb="$(get_mem_available_kb)"
-  swap_total_kb="$(get_swap_total_kb)"
-  [[ "${mem_kb:-0}" -lt 393216 && "${swap_total_kb:-0}" -eq 0 ]]
-}
-
-prompt_yes_no() {
-  local prompt="$1"
-  local ans=""
-  read -rp "$prompt" ans
-  case "$ans" in
-    y|Y|yes|YES) return 0 ;;
-    *) return 1 ;;
+is_special_rhel_like_os() {
+  local os_info os_id
+  os_info="$(get_os_info)"
+  os_id="${os_info%%|*}"
+  case "$os_id" in
+    anolis|centos|ol|almalinux|rocky|alinux)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
   esac
 }
 
-set_swappiness_value() {
-  local value="$1"
-  sysctl -w vm.swappiness="$value" >/dev/null 2>&1 || true
-  mkdir -p /etc/sysctl.d
-  printf 'vm.swappiness=%s\n' "$value" > /etc/sysctl.d/99-3xui-geo-swap.conf
-  sysctl -p /etc/sysctl.d/99-3xui-geo-swap.conf >/dev/null 2>&1 || true
-  printf "$(it swappiness_now)\n" "$(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
+should_force_supercronic() {
+  local mem_total_kb
+  mem_total_kb="$(get_mem_total_kb)"
+
+  if ! is_special_rhel_like_os; then
+    return 1
+  fi
+
+  if ! command -v systemctl >/dev/null 2>&1 || [[ ! -d /run/systemd/system ]]; then
+    return 1
+  fi
+
+  [[ "${mem_total_kb:-0}" -lt 2097152 ]]
 }
 
-enable_swap_preference_for_install() {
-  local swap_total
-  swap_total="$(get_swap_total_kb)"
-  if [[ "${swap_total:-0}" -gt 0 ]]; then
-    echo "$(it swappiness_up)"
-    set_swappiness_value 100
+persist_scheduler_backend() {
+  load_installer_config || true
+  save_installer_config
+}
+
+remove_legacy_cron_entry() {
+  if command -v crontab >/dev/null 2>&1; then
+    local current
+    current="$(crontab -l 2>/dev/null || true)"
+    printf '%s\n' "$current" \
+      | grep -Fv "$CRON_MARK" \
+      | grep -Fv "/usr/local/bin/3xui-geo-runner.sh" \
+      | awk 'NF' \
+      | crontab - || true
   fi
 }
 
-restore_swappiness_after_install() {
-  local swap_total
-  swap_total="$(get_swap_total_kb)"
-  if [[ "${swap_total:-0}" -gt 0 ]]; then
-    echo "$(it swappiness_down)"
-    set_swappiness_value 30
+disable_supercronic_service_if_exists() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable --now "$SUPERCRONIC_SERVICE_NAME" >/dev/null 2>&1 || true
   fi
 }
 
-prepare_anolis_swap_like_success_case() {
-  local free_gb mem_kb swap_kb swap_total
-  free_gb="$(get_root_free_gb)"
-  mem_kb="$(get_mem_available_kb)"
-  swap_kb="$(get_swap_free_kb)"
+detect_supercronic_asset() {
+  case "$(uname -m)" in
+    x86_64|amd64)
+      echo "supercronic-linux-amd64"
+      ;;
+    aarch64|arm64)
+      echo "supercronic-linux-arm64"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
-  free_gb="${free_gb:-0}"
-  mem_kb="${mem_kb:-0}"
-  swap_kb="${swap_kb:-0}"
-
-  if ! is_anolis_os; then
+ensure_supercronic_binary() {
+  local asset url
+  if [[ -x "$SUPERCRONIC_BIN" ]]; then
     return 0
   fi
 
-  if ! need_swap_for_pkg_install; then
-    enable_swap_preference_for_install
-    return 0
-  fi
-
-  echo "$(it anolis_low_mem)"
-  printf "$(it mem_avail)\n" "$mem_kb"
-  printf "$(it swap_free)\n" "$swap_kb"
-  printf "$(it root_free)\n" "$free_gb"
-  echo "$(it oom_risk)"
-
-  if [[ "$free_gb" -lt 5 ]]; then
-    echo "$(it disk_not_enough)"
+  if ! asset="$(detect_supercronic_asset)"; then
+    echo "$(it supercronic_arch_error)"
     exit 1
   fi
 
-  if ! prompt_yes_no "$(it swap_confirm)"; then
-    echo "$(it swap_cancel)"
-    exit 1
-  fi
+  url="https://github.com/aptible/supercronic/releases/latest/download/${asset}"
 
-  echo "$(it disk_ok_continue)"
-
-  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
-    echo "$(it swap_exists_skip)"
+  echo "$(it supercronic_download)"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$SUPERCRONIC_BIN" "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$SUPERCRONIC_BIN" "$url"
   else
-    if [[ -f /swapfile ]]; then
-      swapoff /swapfile >/dev/null 2>&1 || true
-      rm -f /swapfile
-    fi
-
-    dd if=/dev/zero of=/swapfile bs=1M count=3072 status=progress
-    ls -lh /swapfile
-    chmod 600 /swapfile
-    mkswap /swapfile >/dev/null
-    swapon /swapfile
-  fi
-
-  if ! grep -q '^/swapfile swap swap defaults 0 0$' /etc/fstab 2>/dev/null; then
-    echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
-  fi
-
-  enable_swap_preference_for_install
-
-  free -h || true
-  grep '^/swapfile ' /etc/fstab || true
-  echo "$(it swap_success)"
-
-  echo "$(it swap_check)"
-  swapon --show || true
-  free -h || true
-  grep -E 'SwapTotal|SwapFree' /proc/meminfo || true
-
-  swap_total="$(get_swap_total_kb)"
-  if [[ "${swap_total:-0}" -le 0 ]]; then
-    echo "$(it swap_invalid)"
+    printf "$(it dep_missing)\n" "curl/wget"
     exit 1
   fi
+
+  chmod +x "$SUPERCRONIC_BIN"
+  echo "$(it supercronic_ready)"
 }
 
-install_cronie_anolis() {
-  prepare_anolis_swap_like_success_case
-  echo "$(it yum_install)"
-  if yum -y install cronie --disablerepo="*" --enablerepo="BaseOS"; then
-    restore_swappiness_after_install
-    return 0
+ensure_supercronic_files() {
+  mkdir -p "$(dirname "$SUPERCRONIC_CRONTAB")"
+  if [[ ! -f "$SUPERCRONIC_CRONTAB" ]]; then
+    cat > "$SUPERCRONIC_CRONTAB" <<'EOF'
+# 3xui-geo-updater supercronic schedule
+EOF
   fi
-  echo "$(it yum_failed)"
-  exit 1
 }
 
-install_cronie_rhel_like() {
-  if is_anolis_os && command -v yum >/dev/null 2>&1; then
-    install_cronie_anolis
-    return 0
-  fi
+write_supercronic_service() {
+  cat > "$SUPERCRONIC_SERVICE" <<EOF
+[Unit]
+Description=3xui Geo Updater Supercronic Scheduler
+After=network-online.target
+Wants=network-online.target
 
-  if command -v yum >/dev/null 2>&1; then
-    yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
-    return 0
-  fi
+[Service]
+Type=simple
+User=root
+ExecStart=$SUPERCRONIC_BIN -inotify $SUPERCRONIC_CRONTAB
+ExecReload=/bin/kill -USR2 \$MAINPID
+Restart=always
+RestartSec=3
 
-  if command -v microdnf >/dev/null 2>&1; then
-    microdnf install -y cronie
-    return 0
-  fi
+[Install]
+WantedBy=multi-user.target
+EOF
 
-  if command -v dnf >/dev/null 2>&1; then
-    dnf -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
-    return 0
-  fi
+  systemctl daemon-reload
+}
 
-  echo "Package manager not found."
-  exit 1
+detect_scheduler_backend() {
+  if should_force_supercronic; then
+    SCHEDULER_BACKEND="supercronic"
+    echo "$(it supercronic_forced)"
+  else
+    SCHEDULER_BACKEND="cron"
+  fi
+}
+
+ensure_supercronic_ready() {
+  ensure_supercronic_binary
+  ensure_supercronic_files
+  write_supercronic_service
+  remove_legacy_cron_entry
+
+  if grep -Fq "/usr/local/bin/3xui-geo-runner.sh" "$SUPERCRONIC_CRONTAB" 2>/dev/null; then
+    systemctl enable --now "$SUPERCRONIC_SERVICE_NAME" >/dev/null 2>&1 || true
+  else
+    systemctl disable --now "$SUPERCRONIC_SERVICE_NAME" >/dev/null 2>&1 || true
+  fi
 }
 
 install_cron_package() {
@@ -508,15 +440,33 @@ install_cron_package() {
       pacman -Sy --noconfirm cronie
       return 0
       ;;
-    anolis|rhel|centos|rocky|almalinux|fedora|ol)
-      install_cronie_rhel_like
-      return 0
+    anolis|rhel|centos|rocky|almalinux|fedora|ol|alinux)
+      echo "$(it install_stuck_hint)"
+      if command -v yum >/dev/null 2>&1; then
+        yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
+        return 0
+      fi
+      if command -v dnf >/dev/null 2>&1; then
+        dnf -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
+        return 0
+      fi
+      if command -v microdnf >/dev/null 2>&1; then
+        microdnf install -y cronie
+        return 0
+      fi
       ;;
   esac
 
   if [[ " $os_like " == *" rhel "* || " $os_like " == *" centos "* || " $os_like " == *" fedora "* ]]; then
-    install_cronie_rhel_like
-    return 0
+    echo "$(it install_stuck_hint)"
+    if command -v yum >/dev/null 2>&1; then
+      yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
+      return 0
+    fi
+    if command -v dnf >/dev/null 2>&1; then
+      dnf -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
+      return 0
+    fi
   fi
 
   echo "Unsupported distribution for automatic cron installation."
@@ -581,6 +531,18 @@ ensure_cron_ready() {
   fi
 }
 
+ensure_scheduler_ready() {
+  detect_scheduler_backend
+  persist_scheduler_backend
+
+  if [[ "$SCHEDULER_BACKEND" == "supercronic" ]]; then
+    ensure_supercronic_ready
+  else
+    disable_supercronic_service_if_exists
+    ensure_cron_ready
+  fi
+}
+
 ensure_xui_installed() {
   if command -v x-ui >/dev/null 2>&1; then
     return 0
@@ -605,7 +567,6 @@ print_swap_notice() {
   if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
     echo
     echo "$(it swap_notice)"
-    printf "$(it swappiness_now)\n" "$(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
     echo "$(it swap_remove_hint)"
     echo "  swapoff /swapfile"
     echo "  sed -i '\\|^/swapfile |d' /etc/fstab"
@@ -616,7 +577,7 @@ print_swap_notice() {
 init_installer_language
 need_root
 require_cmd bash curl cmp install awk grep mktemp date xargs
-ensure_cron_ready
+ensure_scheduler_ready
 ensure_xui_installed
 
 cat > "$RUNNER" <<'RUNNER_EOF'
@@ -641,6 +602,7 @@ MODE="daily"
 CRON_SCHEDULE="0 3 * * *"
 INTERVAL_DAYS=""
 WEEKDAY="1"
+SCHEDULER_BACKEND="cron"
 
 if [[ -f "$CONFIG" ]]; then
   # shellcheck disable=SC1090
@@ -993,7 +955,14 @@ LOG_FILE="/var/log/3xui-geo-updater.log"
 STATE_DIR="/var/lib/3xui-geo-updater"
 CRON_MARK="# 3xui-geo-updater"
 
+SUPERCRONIC_BIN="/usr/local/bin/supercronic"
+SUPERCRONIC_CRONTAB="/etc/3xui-geo-updater.cron"
+SUPERCRONIC_SERVICE_NAME="3xui-geo-supercronic.service"
+SUPERCRONIC_SERVICE="/etc/systemd/system/${SUPERCRONIC_SERVICE_NAME}"
+
 LANGUAGE=""
+SCHEDULER_BACKEND="cron"
+
 if [[ -f "$CONFIG" ]]; then
   # shellcheck disable=SC1090
   source "$CONFIG"
@@ -1054,8 +1023,7 @@ require_cmd grep awk
 
 read -rp "$(t confirm) " ans
 case "$ans" in
-  y|Y|yes|YES)
-    ;;
+  y|Y|yes|YES) ;;
   *)
     echo "$(t cancel)"
     exit 0
@@ -1068,9 +1036,16 @@ if command -v crontab >/dev/null 2>&1; then
     | grep -Fv "$CRON_MARK" \
     | grep -Fv "/usr/local/bin/3xui-geo-runner.sh" \
     | awk 'NF' \
-    | crontab -
+    | crontab - || true
 fi
 
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl disable --now "$SUPERCRONIC_SERVICE_NAME" >/dev/null 2>&1 || true
+  rm -f "$SUPERCRONIC_SERVICE"
+  systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
+rm -f "$SUPERCRONIC_CRONTAB" "$SUPERCRONIC_BIN"
 rm -f "$RUNNER" "$MANAGER" "$UNINSTALLER" "$WRAPPER_SHORT" "$WRAPPER_ALT"
 rm -f "$CONFIG" "$LOG_FILE"
 rm -rf "$STATE_DIR"
@@ -1089,12 +1064,17 @@ CONFIG="/etc/3xui-geo-updater.conf"
 LOG_FILE="/var/log/3xui-geo-updater.log"
 CRON_MARK="# 3xui-geo-updater"
 
+SUPERCRONIC_BIN="/usr/local/bin/supercronic"
+SUPERCRONIC_CRONTAB="/etc/3xui-geo-updater.cron"
+SUPERCRONIC_SERVICE_NAME="3xui-geo-supercronic.service"
+
 LANGUAGE=""
 SOURCES="1"
 MODE="daily"
 CRON_SCHEDULE="0 3 * * *"
 INTERVAL_DAYS=""
 WEEKDAY="1"
+SCHEDULER_BACKEND="cron"
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -1210,6 +1190,7 @@ load_config() {
   CRON_SCHEDULE="0 3 * * *"
   INTERVAL_DAYS=""
   WEEKDAY="1"
+  SCHEDULER_BACKEND="cron"
 
   if [[ -f "$CONFIG" ]]; then
     # shellcheck disable=SC1090
@@ -1225,6 +1206,7 @@ MODE="$MODE"
 CRON_SCHEDULE="$CRON_SCHEDULE"
 INTERVAL_DAYS="$INTERVAL_DAYS"
 WEEKDAY="$WEEKDAY"
+SCHEDULER_BACKEND="$SCHEDULER_BACKEND"
 EOF2
 }
 
@@ -1366,6 +1348,10 @@ t() {
     zh_CN:swap_delete_confirm) echo "确认删除全部 swap 吗？该操作会关闭所有 swap，并清除 /etc/fstab 中的 swap 项。[y/N]" ;;
     zh_CN:swap_delete_done) echo "全部 swap 已删除。" ;;
     zh_CN:swap_cancel) echo "已取消操作。" ;;
+    zh_CN:scheduler_backend) echo "调度后端" ;;
+    zh_CN:backend_cron) echo "系统 cron" ;;
+    zh_CN:backend_supercronic) echo "Supercronic" ;;
+    zh_CN:service_status) echo "服务状态" ;;
 
     en_US:dep_missing) echo "Missing required command: %s" ;;
     en_US:main_title) echo "3xui Geo Auto Update Manager" ;;
@@ -1384,7 +1370,7 @@ t() {
     en_US:enabled_sources) echo "Enabled sources" ;;
     en_US:schedule_mode) echo "Schedule mode" ;;
     en_US:cron_actual) echo "Actual cron" ;;
-    en_US:current_cron) echo "Current cron task" ;;
+    en_US:current_cron) echo "Current scheduled task" ;;
     en_US:log_file) echo "Log file" ;;
     en_US:not_set) echo "Not set" ;;
     en_US:current_language) echo "Current language" ;;
@@ -1469,6 +1455,10 @@ t() {
     en_US:swap_delete_confirm) echo "Delete all swap? This will disable all swap and remove swap entries from /etc/fstab. [y/N]" ;;
     en_US:swap_delete_done) echo "All swap has been deleted." ;;
     en_US:swap_cancel) echo "Operation canceled." ;;
+    en_US:scheduler_backend) echo "Scheduler backend" ;;
+    en_US:backend_cron) echo "System cron" ;;
+    en_US:backend_supercronic) echo "Supercronic" ;;
+    en_US:service_status) echo "Service status" ;;
 
     ru_RU:dep_missing) echo "Отсутствует обязательная команда: %s" ;;
     ru_RU:main_title) echo "Менеджер автообновления 3xui Geo" ;;
@@ -1487,7 +1477,7 @@ t() {
     ru_RU:enabled_sources) echo "Включённые источники" ;;
     ru_RU:schedule_mode) echo "Режим расписания" ;;
     ru_RU:cron_actual) echo "Фактический cron" ;;
-    ru_RU:current_cron) echo "Текущая cron-задача" ;;
+    ru_RU:current_cron) echo "Текущая задача" ;;
     ru_RU:log_file) echo "Файл логов" ;;
     ru_RU:not_set) echo "Не задано" ;;
     ru_RU:current_language) echo "Текущий язык" ;;
@@ -1558,7 +1548,7 @@ t() {
     ru_RU:lang_ru) echo "Русский" ;;
     ru_RU:lang_fa) echo "فارسی" ;;
     ru_RU:swap_title) echo "Управление swap" ;;
-    ru_RU:swap_menu_status) echo "Показать текущий swap" ;;
+    ru_RU:swap_menu_status) echo "Показать текущее состояние swap" ;;
     ru_RU:swap_menu_resize) echo "Изменить размер /swapfile" ;;
     ru_RU:swap_menu_delete) echo "Удалить весь swap" ;;
     ru_RU:swap_status_title) echo "Текущее состояние swap" ;;
@@ -1569,9 +1559,13 @@ t() {
     ru_RU:swap_size_invalid) echo "Введите целое число больше или равное 1." ;;
     ru_RU:swap_resize_confirm) echo "Пересоздать /swapfile с новым размером? [y/N]" ;;
     ru_RU:swap_resize_done) echo "Swap успешно пересоздан." ;;
-    ru_RU:swap_delete_confirm) echo "Удалить весь swap? Это отключит весь swap и удалит swap-записи из /etc/fstab. [y/N]" ;;
+    ru_RU:swap_delete_confirm) echo "Удалить весь swap? Это отключит весь swap и удалит записи swap из /etc/fstab. [y/N]" ;;
     ru_RU:swap_delete_done) echo "Весь swap удалён." ;;
     ru_RU:swap_cancel) echo "Операция отменена." ;;
+    ru_RU:scheduler_backend) echo "Backend планировщика" ;;
+    ru_RU:backend_cron) echo "Системный cron" ;;
+    ru_RU:backend_supercronic) echo "Supercronic" ;;
+    ru_RU:service_status) echo "Статус службы" ;;
 
     fa_IR:dep_missing) echo "دستور موردنیاز پیدا نشد: %s" ;;
     fa_IR:main_title) echo "مدیریت بروزرسانی خودکار Geo برای 3xui" ;;
@@ -1590,7 +1584,7 @@ t() {
     fa_IR:enabled_sources) echo "منابع فعال" ;;
     fa_IR:schedule_mode) echo "حالت زمان‌بندی" ;;
     fa_IR:cron_actual) echo "cron واقعی" ;;
-    fa_IR:current_cron) echo "وظیفه cron فعلی" ;;
+    fa_IR:current_cron) echo "وظیفه زمان‌بندی فعلی" ;;
     fa_IR:log_file) echo "فایل گزارش" ;;
     fa_IR:not_set) echo "تنظیم نشده" ;;
     fa_IR:current_language) echo "زبان فعلی" ;;
@@ -1675,6 +1669,10 @@ t() {
     fa_IR:swap_delete_confirm) echo "همه swapها حذف شوند؟ این کار همه swapها را غیرفعال می‌کند و ورودی‌های swap را از /etc/fstab پاک می‌کند. [y/N]" ;;
     fa_IR:swap_delete_done) echo "همه swapها حذف شدند." ;;
     fa_IR:swap_cancel) echo "عملیات لغو شد." ;;
+    fa_IR:scheduler_backend) echo "بک‌اند زمان‌بندی" ;;
+    fa_IR:backend_cron) echo "cron سیستمی" ;;
+    fa_IR:backend_supercronic) echo "Supercronic" ;;
+    fa_IR:service_status) echo "وضعیت سرویس" ;;
 
     *) echo "$key" ;;
   esac
@@ -1683,7 +1681,6 @@ t() {
 ensure_crontab_available() {
   if ! command -v crontab >/dev/null 2>&1; then
     echo "$(printf "$(t dep_missing)" "crontab")"
-    echo "错误: 当前系统无法写入定时任务，因为缺少 crontab 命令。"
     return 1
   fi
   return 0
@@ -1691,7 +1688,6 @@ ensure_crontab_available() {
 
 check_cron_ready() {
   local svc=""
-
   if ! command -v crontab >/dev/null 2>&1; then
     return 1
   fi
@@ -1722,6 +1718,14 @@ lang_name_local() {
     en_US) echo "$(t lang_en)" ;;
     ru_RU) echo "$(t lang_ru)" ;;
     fa_IR) echo "$(t lang_fa)" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+backend_name_local() {
+  case "$1" in
+    cron) echo "$(t backend_cron)" ;;
+    supercronic) echo "$(t backend_supercronic)" ;;
     *) echo "$1" ;;
   esac
 }
@@ -1795,114 +1799,39 @@ remove_cron() {
     | crontab -
 }
 
-show_swap_status() {
-  echo
-  echo "========== $(t swap_status_title) =========="
-  if swapon --show | awk 'NR>1 {exit 0} END {exit 1}'; then
-    swapon --show
-  else
-    echo "$(t swap_none)"
-  fi
-  echo
-  free -h || true
-  echo
-  echo "$(t swap_swappiness): $(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
-  echo
-  echo "$(t swap_fstab):"
-  grep ' swap ' /etc/fstab || echo "  $(t not_set)"
+write_supercronic_schedule() {
+  cat > "$SUPERCRONIC_CRONTAB" <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+$CRON_SCHEDULE /usr/local/bin/3xui-geo-runner.sh
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now "$SUPERCRONIC_SERVICE_NAME"
 }
 
-resize_swapfile() {
-  local size_gb size_mb
-  read -rp "$(t swap_size_prompt): " size_gb
+remove_supercronic_schedule() {
+  systemctl disable --now "$SUPERCRONIC_SERVICE_NAME" >/dev/null 2>&1 || true
+  cat > "$SUPERCRONIC_CRONTAB" <<'EOF'
+# 3xui-geo-updater supercronic schedule
+EOF
+}
 
-  if [[ ! "$size_gb" =~ ^[1-9][0-9]*$ ]]; then
-    echo "$(t swap_size_invalid)"
-    return 1
+install_schedule() {
+  if [[ "${SCHEDULER_BACKEND:-cron}" == "supercronic" ]]; then
+    write_supercronic_schedule
+    return $?
   fi
+  install_cron
+}
 
-  if ! read -rp "$(t swap_resize_confirm) " ans || [[ ! "$ans" =~ ^([yY]|yes|YES)$ ]]; then
-    echo "$(t swap_cancel)"
+remove_schedule() {
+  if [[ "${SCHEDULER_BACKEND:-cron}" == "supercronic" ]]; then
+    remove_supercronic_schedule
     return 0
   fi
-
-  size_mb=$(( size_gb * 1024 ))
-
-  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
-    swapoff /swapfile >/dev/null 2>&1 || true
-  fi
-
-  rm -f /swapfile
-  dd if=/dev/zero of=/swapfile bs=1M count="$size_mb" status=progress
-  chmod 600 /swapfile
-  mkswap /swapfile >/dev/null
-  swapon /swapfile
-
-  if grep -q '^/swapfile ' /etc/fstab 2>/dev/null; then
-    sed -i '\|^/swapfile |d' /etc/fstab
-  fi
-  echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
-
-  echo "$(t swap_resize_done)"
-  show_swap_status
-}
-
-delete_all_swap() {
-  local ans
-  read -rp "$(t swap_delete_confirm) " ans
-  if [[ ! "$ans" =~ ^([yY]|yes|YES)$ ]]; then
-    echo "$(t swap_cancel)"
-    return 0
-  fi
-
-  local tmpfile
-  tmpfile="$(mktemp)"
-
-  awk '$3=="swap"{print $1}' /etc/fstab 2>/dev/null > "$tmpfile" || true
-  swapon --show=NAME --noheadings 2>/dev/null >> "$tmpfile" || true
-
-  sort -u "$tmpfile" -o "$tmpfile"
-
-  swapoff -a >/dev/null 2>&1 || true
-
-  if [[ -f /etc/fstab ]]; then
-    awk '$3!="swap"' /etc/fstab > /etc/fstab.3xui-geo.tmp && mv /etc/fstab.3xui-geo.tmp /etc/fstab
-  fi
-
-  while IFS= read -r target; do
-    [[ -z "$target" ]] && continue
-    if [[ -f "$target" ]]; then
-      rm -f "$target"
-    fi
-  done < "$tmpfile"
-
-  rm -f "$tmpfile"
-  rm -f /etc/sysctl.d/99-3xui-geo-swap.conf
-  sysctl -w vm.swappiness=30 >/dev/null 2>&1 || true
-
-  echo "$(t swap_delete_done)"
-  show_swap_status
-}
-
-swap_menu() {
-  while true; do
-    echo
-    echo "========== $(t swap_title) =========="
-    echo "1. $(t swap_menu_status)"
-    echo "2. $(t swap_menu_resize)"
-    echo "3. $(t swap_menu_delete)"
-    echo "0. $(t back)"
-    echo
-
-    read -rp "$(t prompt_choice): " choice
-    case "$choice" in
-      1) show_swap_status ;;
-      2) resize_swapfile ;;
-      3) delete_all_swap ;;
-      0) return 0 ;;
-      *) echo "$(t invalid_input)" ;;
-    esac
-  done
+  remove_cron
 }
 
 show_config() {
@@ -1933,14 +1862,28 @@ show_config() {
   echo "$(t cron_actual):"
   echo "  ${CRON_SCHEDULE:-$(t not_set)}"
   echo
+  echo "$(t scheduler_backend):"
+  echo "  $(backend_name_local "${SCHEDULER_BACKEND:-cron}")"
+  echo
   echo "$(t current_language):"
   echo "  $(lang_name_local "$LANGUAGE")"
   echo
   echo "$(t current_cron):"
-  if command -v crontab >/dev/null 2>&1; then
-    crontab -l 2>/dev/null | grep -F "$CRON_MARK" || echo "  $(t not_set)"
+  if [[ "${SCHEDULER_BACKEND:-cron}" == "supercronic" ]]; then
+    if [[ -f "$SUPERCRONIC_CRONTAB" ]]; then
+      grep -v '^[[:space:]]*$' "$SUPERCRONIC_CRONTAB" | grep -v '^[[:space:]]*#' || echo "  $(t not_set)"
+    else
+      echo "  $(t not_set)"
+    fi
+    echo
+    echo "$(t service_status):"
+    systemctl is-enabled "$SUPERCRONIC_SERVICE_NAME" 2>/dev/null || echo "  $(t not_set)"
   else
-    echo "  $(t not_set)"
+    if command -v crontab >/dev/null 2>&1; then
+      crontab -l 2>/dev/null | grep -F "$CRON_MARK" || echo "  $(t not_set)"
+    else
+      echo "  $(t not_set)"
+    fi
   fi
   echo
   echo "$(t log_file):"
@@ -1958,12 +1901,123 @@ show_logs() {
     echo "3. $(t logs_follow)"
     echo "0. $(t back)"
     echo
+
     read -rp "$(t prompt_choice): " c
 
     case "$c" in
       1) tail -n 50 "$LOG_FILE" ;;
       2) tail -n 100 "$LOG_FILE" ;;
       3) tail -f "$LOG_FILE" ;;
+      0) return 0 ;;
+      *) echo "$(t invalid_input)" ;;
+    esac
+  done
+}
+
+show_swap_status() {
+  echo
+  echo "========== $(t swap_status_title) =========="
+  if swapon --show | awk 'NR>1 {found=1} END {exit(found?0:1)}'; then
+    swapon --show
+  else
+    echo "$(t swap_none)"
+  fi
+  echo
+  free -h || true
+  echo
+  echo "$(t swap_swappiness): $(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
+  echo
+  echo "$(t swap_fstab):"
+  grep ' swap ' /etc/fstab || echo "  $(t not_set)"
+}
+
+resize_swapfile() {
+  local size_gb size_mb ans
+  read -rp "$(t swap_size_prompt): " size_gb
+
+  if [[ ! "$size_gb" =~ ^[1-9][0-9]*$ ]]; then
+    echo "$(t swap_size_invalid)"
+    return 1
+  fi
+
+  read -rp "$(t swap_resize_confirm) " ans
+  if [[ ! "$ans" =~ ^([yY]|yes|YES)$ ]]; then
+    echo "$(t swap_cancel)"
+    return 0
+  fi
+
+  size_mb=$(( size_gb * 1024 ))
+
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
+    swapoff /swapfile >/dev/null 2>&1 || true
+  fi
+
+  rm -f /swapfile
+  dd if=/dev/zero of=/swapfile bs=1M count="$size_mb" status=progress
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+
+  if grep -q '^/swapfile ' /etc/fstab 2>/dev/null; then
+    sed -i '\|^/swapfile |d' /etc/fstab
+  fi
+  echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+
+  echo "$(t swap_resize_done)"
+  show_swap_status
+}
+
+delete_all_swap() {
+  local ans
+  local tmpfile
+
+  read -rp "$(t swap_delete_confirm) " ans
+  if [[ ! "$ans" =~ ^([yY]|yes|YES)$ ]]; then
+    echo "$(t swap_cancel)"
+    return 0
+  fi
+
+  tmpfile="$(mktemp)"
+  awk '$3=="swap"{print $1}' /etc/fstab 2>/dev/null > "$tmpfile" || true
+  swapon --show=NAME --noheadings 2>/dev/null >> "$tmpfile" || true
+  sort -u "$tmpfile" -o "$tmpfile"
+
+  swapoff -a >/dev/null 2>&1 || true
+
+  if [[ -f /etc/fstab ]]; then
+    awk '$3!="swap"' /etc/fstab > /etc/fstab.3xui-geo.tmp && mv /etc/fstab.3xui-geo.tmp /etc/fstab
+  fi
+
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    if [[ -f "$target" && ! -b "$target" ]]; then
+      rm -f "$target"
+    fi
+  done < "$tmpfile"
+
+  rm -f "$tmpfile"
+  rm -f /etc/sysctl.d/99-3xui-geo-swap.conf
+  sysctl -w vm.swappiness=30 >/dev/null 2>&1 || true
+
+  echo "$(t swap_delete_done)"
+  show_swap_status
+}
+
+swap_menu() {
+  while true; do
+    echo
+    echo "========== $(t swap_title) =========="
+    echo "1. $(t swap_menu_status)"
+    echo "2. $(t swap_menu_resize)"
+    echo "3. $(t swap_menu_delete)"
+    echo "0. $(t back)"
+    echo
+
+    read -rp "$(t prompt_choice): " choice
+    case "$choice" in
+      1) show_swap_status ;;
+      2) resize_swapfile ;;
+      3) delete_all_swap ;;
       0) return 0 ;;
       *) echo "$(t invalid_input)" ;;
     esac
@@ -2140,17 +2194,18 @@ switch_language() {
 }
 
 setup_task() {
-  if ! ensure_crontab_available; then
-    return 1
+  if [[ "${SCHEDULER_BACKEND:-cron}" == "cron" ]]; then
+    if ! ensure_crontab_available; then
+      return 1
+    fi
+    check_cron_ready || true
   fi
-
-  check_cron_ready || true
 
   choose_sources
   choose_schedule
   save_config
 
-  if ! install_cron; then
+  if ! install_schedule; then
     return 1
   fi
 
@@ -2177,6 +2232,9 @@ setup_task() {
   echo
   echo "$(t cron_actual):"
   echo "  $CRON_SCHEDULE"
+  echo
+  echo "$(t scheduler_backend):"
+  echo "  $(backend_name_local "${SCHEDULER_BACKEND:-cron}")"
   echo
 
   read -rp "$(t run_now_prompt): " runnow
@@ -2214,8 +2272,13 @@ main_menu() {
       4) show_config ;;
       5) switch_language ;;
       6)
-        if ensure_crontab_available; then
-          remove_cron
+        if [[ "${SCHEDULER_BACKEND:-cron}" == "cron" ]]; then
+          if ensure_crontab_available; then
+            remove_schedule
+            echo "$(t remove_task_done)"
+          fi
+        else
+          remove_schedule
           echo "$(t remove_task_done)"
         fi
         ;;
@@ -2265,6 +2328,7 @@ echo "$(it commands)"
 echo "  xgeo                $(it open_menu)"
 echo "  3xui-geo            $(it open_menu)"
 echo "  xgeo uninstall      $(it one_click_uninstall)"
+echo "$(it scheduler_backend): $(it backend_${SCHEDULER_BACKEND})"
 print_swap_notice
 echo
 echo "$(it start_menu)"
