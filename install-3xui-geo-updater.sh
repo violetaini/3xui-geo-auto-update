@@ -103,6 +103,10 @@ find_cron_service_name() {
   return 1
 }
 
+get_mem_total_kb() {
+  awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
+}
+
 get_mem_available_kb() {
   awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
 }
@@ -122,6 +126,12 @@ need_swap_for_pkg_install() {
   [[ "${mem_kb:-0}" -lt 393216 && "${swap_kb:-0}" -eq 0 ]]
 }
 
+anolis_needs_manual_cronie() {
+  local total_kb
+  total_kb="$(get_mem_total_kb)"
+  [[ "${total_kb:-0}" -lt 786432 ]]
+}
+
 prompt_yes_no() {
   local prompt="$1"
   local ans=""
@@ -133,33 +143,10 @@ prompt_yes_no() {
 }
 
 run_aquasofts_swap_for_anolis() {
-  local free_gb mem_kb swap_kb script_path swap_total
-  free_gb="$(get_root_free_gb)"
-  mem_kb="$(get_mem_available_kb)"
-  swap_kb="$(get_swap_free_kb)"
+  local script_path swap_total
   script_path="/tmp/3xui-geo-anolis-swap.sh"
 
-  free_gb="${free_gb:-0}"
-  mem_kb="${mem_kb:-0}"
-  swap_kb="${swap_kb:-0}"
-
-  echo "检测到当前系统为 Anolis，且内存较低。"
-  echo "MemAvailable: ${mem_kb} KB"
-  echo "SwapFree: ${swap_kb} KB"
-  echo "根分区剩余空间: ${free_gb} GB"
-  echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。"
   echo "将调用你已验证可用的 aquasofts/swap 脚本先创建 swap。"
-
-  if [[ "$free_gb" -lt 5 ]]; then
-    echo "错误: 根分区剩余空间不足 5GB，不建议自动创建 swap。"
-    echo "请先清理磁盘空间，或手动创建 swap 后再运行本脚本。"
-    exit 1
-  fi
-
-  if ! prompt_yes_no "是否现在执行 swap 脚本？执行完成后你需要重新运行本安装脚本。[y/N]: "; then
-    echo "已取消。"
-    exit 1
-  fi
 
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL -o "$script_path" https://raw.githubusercontent.com/aquasofts/swap/main/swap.sh
@@ -186,10 +173,64 @@ run_aquasofts_swap_for_anolis() {
     echo "错误: swap 脚本执行后，系统仍未检测到有效 swap。"
     exit 1
   fi
+}
+
+anolis_manual_cronie_flow() {
+  local free_gb mem_total mem_avail swap_free
+  free_gb="$(get_root_free_gb)"
+  mem_total="$(get_mem_total_kb)"
+  mem_avail="$(get_mem_available_kb)"
+  swap_free="$(get_swap_free_kb)"
+
+  free_gb="${free_gb:-0}"
+  mem_total="${mem_total:-0}"
+  mem_avail="${mem_avail:-0}"
+  swap_free="${swap_free:-0}"
+
+  echo "检测到当前系统为 Anolis，且属于小内存环境。"
+  echo "MemTotal: ${mem_total} KB"
+  echo "MemAvailable: ${mem_avail} KB"
+  echo "SwapFree: ${swap_free} KB"
+  echo "根分区剩余空间: ${free_gb} GB"
+  echo
+
+  if [[ "$free_gb" -lt 5 ]]; then
+    echo "错误: 根分区剩余空间不足 5GB。"
+    echo "请先清理磁盘空间后，再手动创建 swap 并安装 cronie。"
+    exit 1
+  fi
+
+  if [[ "$swap_free" -eq 0 ]]; then
+    echo "当前环境下，脚本内自动继续执行 yum/dnf 安装 cronie，可能导致系统卡死、SSH 断开。"
+    echo "建议先单独创建 swap，再手动安装 cronie。"
+
+    if prompt_yes_no "是否现在调用 aquasofts/swap 脚本先创建 swap？[y/N]: "; then
+      run_aquasofts_swap_for_anolis
+    else
+      echo "已取消自动调用 swap 脚本。"
+    fi
+  else
+    echo "当前系统已经检测到有效 swap。"
+  fi
 
   echo
-  echo "swap 已就绪。请现在重新执行安装命令："
-  echo "curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh"
+  echo "出于稳定性考虑，Anolis 小内存环境下本脚本不再自动执行 yum/dnf 安装 cronie。"
+  echo "请按以下步骤手动完成："
+  echo
+  echo "1. 建议先重启系统"
+  echo "   reboot"
+  echo
+  echo "2. 重启后手动安装 cronie"
+  echo "   yum -y install cronie"
+  echo
+  echo "3. 启动并设置开机自启"
+  echo "   systemctl enable --now crond"
+  echo
+  echo "4. 确认 crontab 可用"
+  echo "   command -v crontab"
+  echo
+  echo "5. 再重新运行本安装脚本"
+  echo "   curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh"
   exit 0
 }
 
@@ -222,8 +263,8 @@ install_cron_package() {
   os_id="${os_info%%|*}"
   os_like="${os_info#*|}"
 
-  if is_anolis_os && need_swap_for_pkg_install; then
-    run_aquasofts_swap_for_anolis
+  if is_anolis_os && anolis_needs_manual_cronie; then
+    anolis_manual_cronie_flow
   fi
 
   case "$os_id" in
