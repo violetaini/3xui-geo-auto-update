@@ -103,10 +103,6 @@ find_cron_service_name() {
   return 1
 }
 
-get_mem_total_kb() {
-  awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
-}
-
 get_mem_available_kb() {
   awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
 }
@@ -126,12 +122,6 @@ need_swap_for_pkg_install() {
   [[ "${mem_kb:-0}" -lt 393216 && "${swap_kb:-0}" -eq 0 ]]
 }
 
-anolis_needs_manual_cronie() {
-  local total_kb
-  total_kb="$(get_mem_total_kb)"
-  [[ "${total_kb:-0}" -lt 786432 ]]
-}
-
 prompt_yes_no() {
   local prompt="$1"
   local ans=""
@@ -142,26 +132,65 @@ prompt_yes_no() {
   esac
 }
 
-run_aquasofts_swap_for_anolis() {
-  local script_path swap_total
-  script_path="/tmp/3xui-geo-anolis-swap.sh"
+prepare_anolis_swap_like_success_case() {
+  local free_gb mem_kb swap_kb swap_total
+  free_gb="$(get_root_free_gb)"
+  mem_kb="$(get_mem_available_kb)"
+  swap_kb="$(get_swap_free_kb)"
 
-  echo "将调用你已验证可用的 aquasofts/swap 脚本先创建 swap。"
+  free_gb="${free_gb:-0}"
+  mem_kb="${mem_kb:-0}"
+  swap_kb="${swap_kb:-0}"
 
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$script_path" https://raw.githubusercontent.com/aquasofts/swap/main/swap.sh
-  elif command -v wget >/dev/null 2>&1; then
-    wget -O "$script_path" --no-check-certificate https://raw.githubusercontent.com/aquasofts/swap/main/swap.sh
-  else
-    echo "错误: 缺少 curl 或 wget，无法自动下载 swap 脚本。"
+  if ! is_anolis_os; then
+    return 0
+  fi
+
+  if ! need_swap_for_pkg_install; then
+    return 0
+  fi
+
+  echo "检测到当前系统为 Anolis，且内存较低。"
+  echo "MemAvailable: ${mem_kb} KB"
+  echo "SwapFree: ${swap_kb} KB"
+  echo "根分区剩余空间: ${free_gb} GB"
+  echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。"
+
+  if [[ "$free_gb" -lt 5 ]]; then
+    echo "错误: 根分区剩余空间不足 5GB，不建议自动创建 swap。"
+    echo "请先清理磁盘空间，或手动创建 swap 后再运行本脚本。"
     exit 1
   fi
 
-  chmod +x "$script_path"
-  bash "$script_path"
+  if ! prompt_yes_no "是否现在按成功模式创建 3G /swapfile 并继续安装？[y/N]: "; then
+    echo "已取消自动创建 swap。"
+    exit 1
+  fi
 
-  sync
-  sleep 2
+  echo "磁盘空间足够，继续执行脚本..."
+
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
+    echo "检测到 /swapfile 已启用，跳过创建。"
+  else
+    if [[ -f /swapfile ]]; then
+      swapoff /swapfile >/dev/null 2>&1 || true
+      rm -f /swapfile
+    fi
+
+    dd if=/dev/zero of=/swapfile bs=1M count=3072 status=progress
+    ls -lh /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+    swapon /swapfile
+  fi
+
+  if ! grep -q '^/swapfile swap swap defaults 0 0$' /etc/fstab 2>/dev/null; then
+    echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+  fi
+
+  free -h || true
+  grep '^/swapfile ' /etc/fstab || true
+  echo "Swap 安装成功！"
 
   echo "swap 校验结果："
   swapon --show || true
@@ -170,90 +199,35 @@ run_aquasofts_swap_for_anolis() {
 
   swap_total="$(awk '/SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
   if [[ "${swap_total:-0}" -le 0 ]]; then
-    echo "错误: swap 脚本执行后，系统仍未检测到有效 swap。"
+    echo "错误: swap 创建后仍未生效，已停止继续安装。"
     exit 1
   fi
-}
-
-anolis_manual_cronie_flow() {
-  local free_gb mem_total mem_avail swap_free
-  free_gb="$(get_root_free_gb)"
-  mem_total="$(get_mem_total_kb)"
-  mem_avail="$(get_mem_available_kb)"
-  swap_free="$(get_swap_free_kb)"
-
-  free_gb="${free_gb:-0}"
-  mem_total="${mem_total:-0}"
-  mem_avail="${mem_avail:-0}"
-  swap_free="${swap_free:-0}"
-
-  echo "检测到当前系统为 Anolis，且属于小内存环境。"
-  echo "MemTotal: ${mem_total} KB"
-  echo "MemAvailable: ${mem_avail} KB"
-  echo "SwapFree: ${swap_free} KB"
-  echo "根分区剩余空间: ${free_gb} GB"
-  echo
-
-  if [[ "$free_gb" -lt 5 ]]; then
-    echo "错误: 根分区剩余空间不足 5GB。"
-    echo "请先清理磁盘空间后，再手动创建 swap 并安装 cronie。"
-    exit 1
-  fi
-
-  if [[ "$swap_free" -eq 0 ]]; then
-    echo "当前环境下，脚本内自动继续执行 yum/dnf 安装 cronie，可能导致系统卡死、SSH 断开。"
-    echo "建议先单独创建 swap，再手动安装 cronie。"
-
-    if prompt_yes_no "是否现在调用 aquasofts/swap 脚本先创建 swap？[y/N]: "; then
-      run_aquasofts_swap_for_anolis
-    else
-      echo "已取消自动调用 swap 脚本。"
-    fi
-  else
-    echo "当前系统已经检测到有效 swap。"
-  fi
-
-  echo
-  echo "出于稳定性考虑，Anolis 小内存环境下本脚本不再自动执行 yum/dnf 安装 cronie。"
-  echo "请按以下步骤手动完成："
-  echo
-  echo "1. 建议先重启系统"
-  echo "   reboot"
-  echo
-  echo "2. 重启后手动安装 cronie"
-  echo "   yum -y install cronie"
-  echo
-  echo "3. 启动并设置开机自启"
-  echo "   systemctl enable --now crond"
-  echo
-  echo "4. 确认 crontab 可用"
-  echo "   command -v crontab"
-  echo
-  echo "5. 再重新运行本安装脚本"
-  echo "   curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh"
-  exit 0
 }
 
 install_cronie_rhel_like() {
+  if command -v yum >/dev/null 2>&1; then
+    echo "执行 yum clean all ..."
+    yum clean all >/dev/null 2>&1 || true
+    echo "使用 yum 安装 cronie ..."
+    yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
+    return 0
+  fi
+
   if command -v microdnf >/dev/null 2>&1; then
     echo "使用 microdnf 安装 cronie ..."
     microdnf install -y cronie
     return 0
   fi
 
-  if command -v yum >/dev/null 2>&1; then
-    echo "使用 yum 安装 cronie ..."
-    yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
-    return 0
-  fi
-
   if command -v dnf >/dev/null 2>&1; then
+    echo "执行 dnf clean all ..."
+    dnf clean all >/dev/null 2>&1 || true
     echo "使用 dnf 安装 cronie ..."
     dnf -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
     return 0
   fi
 
-  echo "错误: 未找到可用的包管理器（microdnf / yum / dnf）。"
+  echo "错误: 未找到可用的包管理器（yum / microdnf / dnf）。"
   exit 1
 }
 
@@ -263,8 +237,8 @@ install_cron_package() {
   os_id="${os_info%%|*}"
   os_like="${os_info#*|}"
 
-  if is_anolis_os && anolis_needs_manual_cronie; then
-    anolis_manual_cronie_flow
+  if is_anolis_os; then
+    prepare_anolis_swap_like_success_case
   fi
 
   case "$os_id" in
