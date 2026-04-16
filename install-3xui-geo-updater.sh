@@ -107,6 +107,10 @@ get_mem_available_kb() {
   awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
 }
 
+get_swap_total_kb() {
+  awk '/SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
+}
+
 get_swap_free_kb() {
   awk '/SwapFree:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
 }
@@ -116,10 +120,10 @@ get_root_free_gb() {
 }
 
 need_swap_for_pkg_install() {
-  local mem_kb swap_kb
+  local mem_kb swap_total_kb
   mem_kb="$(get_mem_available_kb)"
-  swap_kb="$(get_swap_free_kb)"
-  [[ "${mem_kb:-0}" -lt 393216 && "${swap_kb:-0}" -eq 0 ]]
+  swap_total_kb="$(get_swap_total_kb)"
+  [[ "${mem_kb:-0}" -lt 393216 && "${swap_total_kb:-0}" -eq 0 ]]
 }
 
 prompt_yes_no() {
@@ -130,6 +134,33 @@ prompt_yes_no() {
     y|Y|yes|YES) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+set_swappiness_value() {
+  local value="$1"
+  sysctl -w vm.swappiness="$value" >/dev/null 2>&1 || true
+  mkdir -p /etc/sysctl.d
+  printf 'vm.swappiness=%s\n' "$value" > /etc/sysctl.d/99-3xui-geo-swap.conf
+  sysctl --system >/dev/null 2>&1 || true
+  echo "当前 swappiness: $(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
+}
+
+enable_swap_preference_for_install() {
+  local swap_total
+  swap_total="$(get_swap_total_kb)"
+  if [[ "${swap_total:-0}" -gt 0 ]]; then
+    echo "正在将 swappiness 调整为 100，以便安装阶段更积极使用 swap ..."
+    set_swappiness_value 100
+  fi
+}
+
+restore_swappiness_after_install() {
+  local swap_total
+  swap_total="$(get_swap_total_kb)"
+  if [[ "${swap_total:-0}" -gt 0 ]]; then
+    echo "安装成功，正在将 swappiness 调整回 30 ..."
+    set_swappiness_value 30
+  fi
 }
 
 prepare_anolis_swap_like_success_case() {
@@ -147,6 +178,7 @@ prepare_anolis_swap_like_success_case() {
   fi
 
   if ! need_swap_for_pkg_install; then
+    enable_swap_preference_for_install
     return 0
   fi
 
@@ -182,12 +214,13 @@ prepare_anolis_swap_like_success_case() {
     chmod 600 /swapfile
     mkswap /swapfile >/dev/null
     swapon /swapfile
-    sysctl -w vm.swappiness=100 >/dev/null 2>&1 || true
   fi
 
   if ! grep -q '^/swapfile swap swap defaults 0 0$' /etc/fstab 2>/dev/null; then
     echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
   fi
+
+  enable_swap_preference_for_install
 
   free -h || true
   grep '^/swapfile ' /etc/fstab || true
@@ -198,18 +231,35 @@ prepare_anolis_swap_like_success_case() {
   free -h || true
   grep -E 'SwapTotal|SwapFree' /proc/meminfo || true
 
-  swap_total="$(awk '/SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  swap_total="$(get_swap_total_kb)"
   if [[ "${swap_total:-0}" -le 0 ]]; then
     echo "错误: swap 创建后仍未生效，已停止继续安装。"
     exit 1
   fi
 }
 
+install_cronie_anolis() {
+  prepare_anolis_swap_like_success_case
+
+  echo "使用 yum 安装 cronie ..."
+  if yum -y install cronie --disablerepo="*" --enablerepo="BaseOS"; then
+    restore_swappiness_after_install
+    return 0
+  fi
+
+  echo "错误: yum 安装 cronie 失败。"
+  exit 1
+}
+
 install_cronie_rhel_like() {
+  if is_anolis_os && command -v yum >/dev/null 2>&1; then
+    install_cronie_anolis
+    return 0
+  fi
+
   if command -v yum >/dev/null 2>&1; then
-    
     echo "使用 yum 安装 cronie ..."
-    yum -y install cronie --disablerepo="*" --enablerepo="BaseOS"
+    yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
     return 0
   fi
 
@@ -220,8 +270,6 @@ install_cronie_rhel_like() {
   fi
 
   if command -v dnf >/dev/null 2>&1; then
-    echo "执行 dnf clean all ..."
-    dnf clean all >/dev/null 2>&1 || true
     echo "使用 dnf 安装 cronie ..."
     dnf -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
     return 0
@@ -236,10 +284,6 @@ install_cron_package() {
   os_info="$(get_os_info)"
   os_id="${os_info%%|*}"
   os_like="${os_info#*|}"
-
-  if is_anolis_os; then
-    prepare_anolis_swap_like_success_case
-  fi
 
   case "$os_id" in
     debian|ubuntu)
@@ -360,6 +404,7 @@ print_swap_notice() {
   if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
     echo
     echo "提示：当前系统已启用 swap：/swapfile"
+    echo "当前 swappiness: $(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
     echo "如后续确认不再需要，可执行："
     echo "  swapoff /swapfile"
     echo "  sed -i '\\|^/swapfile |d' /etc/fstab"
