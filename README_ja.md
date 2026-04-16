@@ -33,7 +33,8 @@
   - `3xui-geo`
 - スケジューラーバックエンドの自動選択
   - 標準システムではシステム cron を使用
-  - メモリの少ないサポート対象の RHEL 系システムでは自動的に **Supercronic** を使用
+  - メモリが少ないサポート対象の RHEL 系システムでは、まず利用可能な組み込みのシステム cron が存在するかどうかを確認
+  - 利用可能なシステム cron がない場合、インストーラーは自動的に Supercronic に切り替わります
 - Supercronic モードの機能：
   - systemd サービス管理
   - 起動時の自動実行
@@ -54,6 +55,36 @@
 3. **runetfreedom**
    - `geoip_RU.dat`
    - `geosite_RU.dat`
+
+## サポートされている OS
+
+インストーラーは現在、以下の Linux ファミリー向けに設計およびテストされています：
+
+- Alpine
+- Debian
+- Kali
+- Ubuntu
+- Anolis
+- RHEL
+- AlmaLinux
+- Rocky Linux
+- Oracle Linux
+- Alibaba Cloud Linux
+- OpenCloudOS
+- CentOS Stream
+- Fedora
+- openEuler
+- Arch Linux
+
+**注意事項：**
+
+- **Debian / Kali / Ubuntu** などの Debian 系システムは `apt + cron` インストールパスに従います
+- **Anolis / RHEL / AlmaLinux / Rocky / Oracle / Alibaba Cloud Linux / OpenCloudOS / CentOS Stream / Fedora / openEuler** などの RHEL 系システムは RHEL 系スケジューラーパスに従います
+- メモリが少ないサポート対象の RHEL 系システムでは、まず利用可能な組み込みのシステム cron が既に存在するかどうかを確認します
+- 利用可能な組み込みのシステム cron が存在する場合、ネイティブのシステム cron がそのまま使用されます
+- 存在しない場合、インストーラーは自動的に **Supercronic** に切り替わります
+
+必要なツールと cron 環境がすでに存在する場合、他の Linux ディストリビューションでも機能する可能性がありますが、現在は主要なサポート対象ではありません。
 
 ## 動作の仕組み
 
@@ -88,14 +119,17 @@
 このインストーラーは、標準的な Linux システムで通常利用可能な一般的な Linux ユーティリティに主に依存しています。
 
 標準システムでは、必要に応じてインストーラーが自動的に cron をインストールして起動しようとします。
-メモリの少ないサポート対象の RHEL 系システムでは、インストーラーはシステムの cron に依存せず、自動的に **Supercronic** に切り替わります。
+
+メモリが少ないサポート対象の RHEL 系システムでは、まず利用可能な組み込みのシステム cron が既に存在するかどうかを確認します。存在する場合、ネイティブのシステム cron が使用されます。そうでない場合、インストーラーは自動的に **Supercronic** に切り替わります。
 
 ## インストール
 
 ### クイックインストール
 インストーラーはスケジューラーバックエンドを自動的に選択します：
 - 標準システムではシステム cron を使用し、必要に応じてインストール/起動を試みます。
-- メモリの少ないサポート対象の RHEL 系システムでは、自動的に **Supercronic** に切り替わります。
+- メモリが少ないサポート対象の RHEL 系システムでは、まず利用可能な組み込みのシステム cron が既に存在するかどうかを確認します。
+- 利用可能な組み込みのシステム cron がある場合は、それを直接使用します。
+- そうでない場合、インストーラーは自動的に **Supercronic** に切り替わります。
 ```bash
 curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
@@ -160,8 +194,6 @@ xgeo uninstall
 
 ## メニューの概要
 
-管理パネルは以下の操作をサポートしています：
-
 - 自動更新の設定または変更
 - 今すぐ更新チェックを実行
 - ログの表示
@@ -186,18 +218,29 @@ xgeo uninstall
 
 ### 1. システム cron
 標準システムで使用されます。
+
 cron がない場合、インストーラーが自動的にインストールと起動を試みます。
 
 ### 2. Supercronic
-メモリの少ないサポート対象の RHEL 系システムで自動的に使用されます。
+メモリの少ないサポート対象の RHEL 系システムで、必要な場合にのみ使用されます。
 
-現在、総メモリ (RAM) が **2 GiB** 未満の場合、以下のシステムで Supercronic モードが強制的に使用されます：
+現在、インストーラーは以下のシステムをチェックして、低メモリスケジューラーのフォールバックを実行します：
+
 - Anolis
-- CentOS Stream
-- Oracle Linux
+- RHEL
 - AlmaLinux
 - Rocky Linux
+- Oracle Linux
+- OpenCloudOS
+- CentOS Stream
+- Fedora
+- openEuler
 - Alibaba Cloud Linux
+
+総メモリが **2 GiB** 未満の場合、インストーラーはまず利用可能な組み込みのシステム cron が既に存在するかどうかを確認します。
+
+- 利用可能な組み込みのシステム cron が見つかった場合、インストーラーはネイティブのシステム cron を使用し続けます。
+- 利用可能な組み込みのシステム cron が見つからない場合、インストーラーは自動的に **Supercronic** に切り替わります。
 
 Supercronic モードでは、インストーラーは以下の処理を行います：
 - Supercronic のスタンドアロンバイナリをダウンロード
@@ -273,7 +316,9 @@ Supercronic モードが有効な場合、以下のファイルも作成され�
 標準的な Linux システムでは、cron がない場合、自動的にインストールと起動を試みます。
 
 メモリの少ないサポート対象の RHEL 系システムでは、まず利用可能な組み込みのシステム cron が既に存在するかどうかを確認します。
+
 存在する場合、ネイティブのシステム cron が使用されます。
+
 存在しない場合、自動的に Supercronic に切り替わります。
 
 ## オープンソースに関する通知と免責事項
@@ -354,18 +399,3 @@ SOFTWARE.
 └── screenshots/
     └── main-menu-preview.png
 ```
-
-## コントリビューション
-
-Issue および Pull Request を歓迎します。
-貢献したい場合は、以下をお願いします：
-
-- 問題を明確に記述する
-- 環境を説明する
-- 関連する場合はログを含める
-- レビューしやすいように変更点を絞る
-
-## 謝辞
-
-3x-ui のメンテナおよび Geo ルールプロバイダの皆様のご尽力に感謝いたします。
-このプロジェクトがお役に立ちましたら、ぜひリポジトリに Star を付けてください。
