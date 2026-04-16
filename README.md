@@ -247,8 +247,6 @@ tail -f /var/log/3xui-geo-updater.log
 
 ## Installed Components
 
-## Installed Components
-
 The installer creates the following files:
 
 - `/usr/local/bin/3xui-geo-runner.sh`
