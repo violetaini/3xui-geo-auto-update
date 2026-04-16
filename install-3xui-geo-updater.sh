@@ -300,7 +300,7 @@ is_special_rhel_like_os() {
   os_info="$(get_os_info)"
   os_id="${os_info%%|*}"
   case "$os_id" in
-    anolis|centos|ol|almalinux|rocky|alinux)
+    anolis|centos|ol|almalinux|rocky|alinux|fedora|opencloudos|openeuler)
       return 0
       ;;
     *)
@@ -454,7 +454,7 @@ install_cron_package() {
   os_like="${os_info#*|}"
 
   case "$os_id" in
-    debian|ubuntu)
+    debian|ubuntu|kali)
       apt-get update
       DEBIAN_FRONTEND=noninteractive apt-get install -y cron
       return 0
@@ -468,7 +468,7 @@ install_cron_package() {
       pacman -Sy --noconfirm cronie
       return 0
       ;;
-    anolis|rhel|centos|rocky|almalinux|fedora|ol|alinux)
+    anolis|rhel|centos|rocky|almalinux|fedora|ol|alinux|opencloudos|openeuler)
       echo "$(it install_stuck_hint)"
       if command -v yum >/dev/null 2>&1; then
         yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
