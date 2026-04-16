@@ -189,7 +189,6 @@ init_installer_language() {
     LANGUAGE="zh_CN"
     bootstrap_language
   fi
-  save_installer_config
 }
 
 need_root() {
