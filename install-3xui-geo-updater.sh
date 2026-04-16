@@ -182,6 +182,7 @@ prepare_anolis_swap_like_success_case() {
     chmod 600 /swapfile
     mkswap /swapfile >/dev/null
     swapon /swapfile
+    sysctl -w vm.swappiness=100 >/dev/null 2>&1 || true
   fi
 
   if ! grep -q '^/swapfile swap swap defaults 0 0$' /etc/fstab 2>/dev/null; then
