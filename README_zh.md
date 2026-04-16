@@ -1,6 +1,6 @@
 # 3xui Geo Updater
 
-[English](README.md) | [简体中文](README_zh.md) | [Русский](README_ru.md) | [فارسی](README_fa.md)
+[English](README.md) | [简体中文](README_zh.md) | [日本語](README_ja.md) | [Русский](README_ru.md) | [فارسی](README_fa.md)
 
 一个轻量级、多语言的 **3x-ui** Geo 文件自动更新工具，支持数据源选择、定时更新、日志记录和安全的重启机制。
 
@@ -349,6 +349,7 @@ SOFTWARE.
 ├── LICENSE
 ├── README.md
 ├── README_fa.md
+├── README_ja.md
 ├── README_ru.md
 ├── README_zh.md
 └── screenshots/
