@@ -12,9 +12,224 @@ LOG_FILE="/var/log/3xui-geo-updater.log"
 STATE_DIR="/var/lib/3xui-geo-updater"
 CRON_MARK="# 3xui-geo-updater"
 
+LANGUAGE=""
+SOURCES="1"
+MODE="daily"
+CRON_SCHEDULE="0 3 * * *"
+INTERVAL_DAYS=""
+WEEKDAY="1"
+
+load_installer_config() {
+  if [[ -f "$CONFIG" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONFIG" || true
+  fi
+}
+
+save_initial_config_if_missing() {
+  if [[ ! -f "$CONFIG" ]]; then
+    mkdir -p "$(dirname "$CONFIG")"
+    cat > "$CONFIG" <<EOF2
+LANGUAGE="$LANGUAGE"
+SOURCES="$SOURCES"
+MODE="$MODE"
+CRON_SCHEDULE="$CRON_SCHEDULE"
+INTERVAL_DAYS="$INTERVAL_DAYS"
+WEEKDAY="$WEEKDAY"
+EOF2
+  fi
+}
+
+it() {
+  local key="$1"
+  local lang="${LANGUAGE:-zh_CN}"
+  case "${lang}:${key}" in
+    zh_CN:choose_title) echo "Language / 语言 / Язык / زبان" ;;
+    zh_CN:choose_text) echo "首次运行，请先选择语言：" ;;
+    zh_CN:choose_prompt) echo "请选择" ;;
+    zh_CN:invalid_input) echo "输入无效。" ;;
+    zh_CN:need_root) echo "请使用 root 用户运行安装脚本。" ;;
+    zh_CN:dep_missing) echo "缺少依赖命令: %s" ;;
+    zh_CN:cron_install_try) echo "未检测到 crontab，正在尝试自动安装 cron ..." ;;
+    zh_CN:cron_service_try) echo "未检测到 cron 服务，正在尝试安装/修复 ..." ;;
+    zh_CN:anolis_low_mem) echo "检测到当前系统为 Anolis，且内存较低。" ;;
+    zh_CN:mem_avail) echo "MemAvailable: %s KB" ;;
+    zh_CN:swap_free) echo "SwapFree: %s KB" ;;
+    zh_CN:root_free) echo "根分区剩余空间: %s GB" ;;
+    zh_CN:oom_risk) echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。" ;;
+    zh_CN:disk_not_enough) echo "错误: 根分区剩余空间不足 5GB，不建议自动创建 swap。" ;;
+    zh_CN:swap_confirm) echo "是否现在按成功模式创建 3G /swapfile 并继续安装？[y/N]: " ;;
+    zh_CN:swap_cancel) echo "已取消自动创建 swap。" ;;
+    zh_CN:disk_ok_continue) echo "磁盘空间足够，继续执行脚本..." ;;
+    zh_CN:swap_exists_skip) echo "检测到 /swapfile 已启用，跳过创建。" ;;
+    zh_CN:swappiness_up) echo "正在将 swappiness 调整为 100，以便安装阶段更积极使用 swap ..." ;;
+    zh_CN:swappiness_down) echo "安装成功，正在将 swappiness 调整回 30 ..." ;;
+    zh_CN:swappiness_now) echo "当前 swappiness: %s" ;;
+    zh_CN:swap_success) echo "Swap 安装成功！" ;;
+    zh_CN:swap_check) echo "swap 校验结果：" ;;
+    zh_CN:swap_invalid) echo "错误: swap 创建后仍未生效，已停止继续安装。" ;;
+    zh_CN:yum_install) echo "使用 yum 安装 cronie ..." ;;
+    zh_CN:yum_failed) echo "错误: yum 安装 cronie 失败。" ;;
+    zh_CN:cron_auto_failed) echo "错误: 自动安装后仍未检测到 crontab。" ;;
+    zh_CN:xui_missing1) echo "错误: 未检测到 3x-ui / x-ui。" ;;
+    zh_CN:xui_missing2) echo "本脚本仅适用于已安装并可正常使用的 3x-ui 环境。" ;;
+    zh_CN:install_done) echo "安装完成。" ;;
+    zh_CN:commands) echo "可用命令：" ;;
+    zh_CN:open_menu) echo "打开管理菜单" ;;
+    zh_CN:one_click_uninstall) echo "一键卸载" ;;
+    zh_CN:start_menu) echo "现在为你启动管理菜单..." ;;
+    zh_CN:swap_notice) echo "提示：当前系统已启用 swap：/swapfile" ;;
+    zh_CN:swap_remove_hint) echo "如后续确认不再需要，可执行：" ;;
+
+    en_US:choose_title) echo "Language / 语言 / Язык / زبان" ;;
+    en_US:choose_text) echo "First run: please choose a language:" ;;
+    en_US:choose_prompt) echo "Please choose" ;;
+    en_US:invalid_input) echo "Invalid input." ;;
+    en_US:need_root) echo "Please run the installer as root." ;;
+    en_US:dep_missing) echo "Missing required command: %s" ;;
+    en_US:cron_install_try) echo "crontab not found, trying to install cron ..." ;;
+    en_US:cron_service_try) echo "cron service not found, trying to install/repair ..." ;;
+    en_US:anolis_low_mem) echo "Detected Anolis with low memory." ;;
+    en_US:mem_avail) echo "MemAvailable: %s KB" ;;
+    en_US:swap_free) echo "SwapFree: %s KB" ;;
+    en_US:root_free) echo "Root free space: %s GB" ;;
+    en_US:oom_risk) echo "In the current environment, installing cronie via yum/dnf can be killed by OOM due to low memory." ;;
+    en_US:disk_not_enough) echo "Error: root free space is below 5GB; automatic swap creation is not recommended." ;;
+    en_US:swap_confirm) echo "Create a 3G /swapfile using the proven method and continue? [y/N]: " ;;
+    en_US:swap_cancel) echo "Automatic swap creation canceled." ;;
+    en_US:disk_ok_continue) echo "Disk space is sufficient, continuing..." ;;
+    en_US:swap_exists_skip) echo "Detected an active /swapfile, skipping creation." ;;
+    en_US:swappiness_up) echo "Setting swappiness to 100 so the installer prefers swap more aggressively ..." ;;
+    en_US:swappiness_down) echo "Installation succeeded, restoring swappiness to 30 ..." ;;
+    en_US:swappiness_now) echo "Current swappiness: %s" ;;
+    en_US:swap_success) echo "Swap installed successfully!" ;;
+    en_US:swap_check) echo "Swap verification:" ;;
+    en_US:swap_invalid) echo "Error: swap is still not active after creation. Installation stopped." ;;
+    en_US:yum_install) echo "Installing cronie with yum ..." ;;
+    en_US:yum_failed) echo "Error: failed to install cronie with yum." ;;
+    en_US:cron_auto_failed) echo "Error: crontab is still unavailable after automatic installation." ;;
+    en_US:xui_missing1) echo "Error: 3x-ui / x-ui was not detected." ;;
+    en_US:xui_missing2) echo "This script only works on systems where 3x-ui is already installed and usable." ;;
+    en_US:install_done) echo "Installation completed." ;;
+    en_US:commands) echo "Available commands:" ;;
+    en_US:open_menu) echo "Open manager menu" ;;
+    en_US:one_click_uninstall) echo "One-click uninstall" ;;
+    en_US:start_menu) echo "Starting the manager menu now..." ;;
+    en_US:swap_notice) echo "Note: swap is currently enabled at /swapfile" ;;
+    en_US:swap_remove_hint) echo "If you no longer need it later, run:" ;;
+
+    ru_RU:choose_title) echo "Language / 语言 / Язык / زبان" ;;
+    ru_RU:choose_text) echo "Первый запуск: выберите язык:" ;;
+    ru_RU:choose_prompt) echo "Выберите" ;;
+    ru_RU:invalid_input) echo "Неверный ввод." ;;
+    ru_RU:need_root) echo "Пожалуйста, запустите установщик от root." ;;
+    ru_RU:dep_missing) echo "Отсутствует обязательная команда: %s" ;;
+    ru_RU:cron_install_try) echo "crontab не найден, пытаемся установить cron ..." ;;
+    ru_RU:cron_service_try) echo "Служба cron не найдена, пытаемся установить/исправить ..." ;;
+    ru_RU:anolis_low_mem) echo "Обнаружен Anolis с малым объёмом памяти." ;;
+    ru_RU:mem_avail) echo "MemAvailable: %s KB" ;;
+    ru_RU:swap_free) echo "SwapFree: %s KB" ;;
+    ru_RU:root_free) echo "Свободное место на корне: %s GB" ;;
+    ru_RU:oom_risk) echo "В текущей среде установка cronie через yum/dnf может быть убита OOM из-за нехватки памяти." ;;
+    ru_RU:disk_not_enough) echo "Ошибка: свободное место на корне меньше 5GB; автоматически создавать swap не рекомендуется." ;;
+    ru_RU:swap_confirm) echo "Создать 3G /swapfile по проверенной схеме и продолжить? [y/N]: " ;;
+    ru_RU:swap_cancel) echo "Автоматическое создание swap отменено." ;;
+    ru_RU:disk_ok_continue) echo "Места на диске достаточно, продолжаем..." ;;
+    ru_RU:swap_exists_skip) echo "Обнаружен активный /swapfile, создание пропущено." ;;
+    ru_RU:swappiness_up) echo "Устанавливаем swappiness=100, чтобы во время установки система активнее использовала swap ..." ;;
+    ru_RU:swappiness_down) echo "Установка успешна, возвращаем swappiness к 30 ..." ;;
+    ru_RU:swappiness_now) echo "Текущее значение swappiness: %s" ;;
+    ru_RU:swap_success) echo "Swap успешно установлен!" ;;
+    ru_RU:swap_check) echo "Проверка swap:" ;;
+    ru_RU:swap_invalid) echo "Ошибка: swap не активировался после создания. Установка остановлена." ;;
+    ru_RU:yum_install) echo "Устанавливаем cronie через yum ..." ;;
+    ru_RU:yum_failed) echo "Ошибка: не удалось установить cronie через yum." ;;
+    ru_RU:cron_auto_failed) echo "Ошибка: после автоматической установки crontab всё ещё недоступен." ;;
+    ru_RU:xui_missing1) echo "Ошибка: 3x-ui / x-ui не обнаружен." ;;
+    ru_RU:xui_missing2) echo "Этот скрипт работает только в среде, где 3x-ui уже установлен и доступен." ;;
+    ru_RU:install_done) echo "Установка завершена." ;;
+    ru_RU:commands) echo "Доступные команды:" ;;
+    ru_RU:open_menu) echo "Открыть меню управления" ;;
+    ru_RU:one_click_uninstall) echo "Удалить одним действием" ;;
+    ru_RU:start_menu) echo "Запускаем меню управления..." ;;
+    ru_RU:swap_notice) echo "Примечание: swap сейчас включён в /swapfile" ;;
+    ru_RU:swap_remove_hint) echo "Если позже он станет не нужен, выполните:" ;;
+
+    fa_IR:choose_title) echo "Language / 语言 / Язык / زبان" ;;
+    fa_IR:choose_text) echo "برای اولین اجرا، لطفاً زبان را انتخاب کنید:" ;;
+    fa_IR:choose_prompt) echo "انتخاب کنید" ;;
+    fa_IR:invalid_input) echo "ورودی نامعتبر است." ;;
+    fa_IR:need_root) echo "لطفاً نصب‌کننده را با کاربر root اجرا کنید." ;;
+    fa_IR:dep_missing) echo "دستور موردنیاز پیدا نشد: %s" ;;
+    fa_IR:cron_install_try) echo "crontab پیدا نشد، در حال تلاش برای نصب cron ..." ;;
+    fa_IR:cron_service_try) echo "سرویس cron پیدا نشد، در حال تلاش برای نصب/تعمیر ..." ;;
+    fa_IR:anolis_low_mem) echo "سیستم Anolis با حافظه کم شناسایی شد." ;;
+    fa_IR:mem_avail) echo "MemAvailable: %s KB" ;;
+    fa_IR:swap_free) echo "SwapFree: %s KB" ;;
+    fa_IR:root_free) echo "فضای آزاد ریشه: %s GB" ;;
+    fa_IR:oom_risk) echo "در این شرایط، نصب cronie با yum/dnf ممکن است به‌دلیل کمبود حافظه توسط OOM متوقف شود." ;;
+    fa_IR:disk_not_enough) echo "خطا: فضای آزاد ریشه کمتر از 5GB است؛ ایجاد خودکار swap توصیه نمی‌شود." ;;
+    fa_IR:swap_confirm) echo "آیا /swapfile سه گیگابایتی با روش موفق ایجاد شود و ادامه دهیم؟ [y/N]: " ;;
+    fa_IR:swap_cancel) echo "ایجاد خودکار swap لغو شد." ;;
+    fa_IR:disk_ok_continue) echo "فضای دیسک کافی است، ادامه می‌دهیم..." ;;
+    fa_IR:swap_exists_skip) echo "یک /swapfile فعال شناسایی شد؛ ایجاد مجدد رد شد." ;;
+    fa_IR:swappiness_up) echo "در حال تنظیم swappiness روی 100 تا سیستم هنگام نصب بیشتر از swap استفاده کند ..." ;;
+    fa_IR:swappiness_down) echo "نصب موفق بود، در حال بازگرداندن swappiness به 30 ..." ;;
+    fa_IR:swappiness_now) echo "swappiness فعلی: %s" ;;
+    fa_IR:swap_success) echo "Swap با موفقیت نصب شد!" ;;
+    fa_IR:swap_check) echo "بررسی swap:" ;;
+    fa_IR:swap_invalid) echo "خطا: بعد از ایجاد، swap فعال نشد. نصب متوقف شد." ;;
+    fa_IR:yum_install) echo "در حال نصب cronie با yum ..." ;;
+    fa_IR:yum_failed) echo "خطا: نصب cronie با yum ناموفق بود." ;;
+    fa_IR:cron_auto_failed) echo "خطا: بعد از نصب خودکار، crontab هنوز در دسترس نیست." ;;
+    fa_IR:xui_missing1) echo "خطا: 3x-ui / x-ui شناسایی نشد." ;;
+    fa_IR:xui_missing2) echo "این اسکریپت فقط در محیطی کار می‌کند که 3x-ui از قبل نصب و قابل استفاده باشد." ;;
+    fa_IR:install_done) echo "نصب کامل شد." ;;
+    fa_IR:commands) echo "دستورات قابل استفاده:" ;;
+    fa_IR:open_menu) echo "باز کردن منوی مدیریت" ;;
+    fa_IR:one_click_uninstall) echo "حذف یک‌مرحله‌ای" ;;
+    fa_IR:start_menu) echo "در حال اجرای منوی مدیریت..." ;;
+    fa_IR:swap_notice) echo "نکته: هم‌اکنون swap در /swapfile فعال است" ;;
+    fa_IR:swap_remove_hint) echo "اگر بعداً دیگر به آن نیاز نداشتید، اجرا کنید:" ;;
+
+    *) echo "$key" ;;
+  esac
+}
+
+bootstrap_language() {
+  local choice
+  while true; do
+    echo
+    echo "========== $(it choose_title) =========="
+    echo "$(it choose_text)"
+    echo "1. 简体中文"
+    echo "2. English"
+    echo "3. Русский"
+    echo "4. فارسی"
+    echo
+    read -rp "$(it choose_prompt): " choice
+    case "$choice" in
+      1) LANGUAGE="zh_CN"; break ;;
+      2) LANGUAGE="en_US"; break ;;
+      3) LANGUAGE="ru_RU"; break ;;
+      4) LANGUAGE="fa_IR"; break ;;
+      *) echo "$(it invalid_input)" ;;
+    esac
+  done
+}
+
+init_installer_language() {
+  load_installer_config
+  if [[ -z "${LANGUAGE:-}" ]]; then
+    LANGUAGE="zh_CN"
+    bootstrap_language
+  fi
+  save_initial_config_if_missing
+}
+
 need_root() {
   if [[ "${EUID}" -ne 0 ]]; then
-    echo "请使用 root 用户运行安装脚本。"
+    echo "$(it need_root)"
     exit 1
   fi
 }
@@ -23,8 +238,7 @@ require_cmd() {
   local c
   for c in "$@"; do
     if ! command -v "$c" >/dev/null 2>&1; then
-      echo "缺少依赖命令: $c"
-      echo "请先安装后再执行。"
+      printf "$(it dep_missing)\n" "$c"
       exit 1
     fi
   done
@@ -141,15 +355,15 @@ set_swappiness_value() {
   sysctl -w vm.swappiness="$value" >/dev/null 2>&1 || true
   mkdir -p /etc/sysctl.d
   printf 'vm.swappiness=%s\n' "$value" > /etc/sysctl.d/99-3xui-geo-swap.conf
-  sysctl --system >/dev/null 2>&1 || true
-  echo "当前 swappiness: $(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
+  sysctl -p /etc/sysctl.d/99-3xui-geo-swap.conf >/dev/null 2>&1 || true
+  printf "$(it swappiness_now)\n" "$(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
 }
 
 enable_swap_preference_for_install() {
   local swap_total
   swap_total="$(get_swap_total_kb)"
   if [[ "${swap_total:-0}" -gt 0 ]]; then
-    echo "正在将 swappiness 调整为 100，以便安装阶段更积极使用 swap ..."
+    echo "$(it swappiness_up)"
     set_swappiness_value 100
   fi
 }
@@ -158,7 +372,7 @@ restore_swappiness_after_install() {
   local swap_total
   swap_total="$(get_swap_total_kb)"
   if [[ "${swap_total:-0}" -gt 0 ]]; then
-    echo "安装成功，正在将 swappiness 调整回 30 ..."
+    echo "$(it swappiness_down)"
     set_swappiness_value 30
   fi
 }
@@ -182,27 +396,26 @@ prepare_anolis_swap_like_success_case() {
     return 0
   fi
 
-  echo "检测到当前系统为 Anolis，且内存较低。"
-  echo "MemAvailable: ${mem_kb} KB"
-  echo "SwapFree: ${swap_kb} KB"
-  echo "根分区剩余空间: ${free_gb} GB"
-  echo "当前环境下，yum/dnf 安装 cronie 容易因内存不足被 OOM killer 杀掉。"
+  echo "$(it anolis_low_mem)"
+  printf "$(it mem_avail)\n" "$mem_kb"
+  printf "$(it swap_free)\n" "$swap_kb"
+  printf "$(it root_free)\n" "$free_gb"
+  echo "$(it oom_risk)"
 
   if [[ "$free_gb" -lt 5 ]]; then
-    echo "错误: 根分区剩余空间不足 5GB，不建议自动创建 swap。"
-    echo "请先清理磁盘空间，或手动创建 swap 后再运行本脚本。"
+    echo "$(it disk_not_enough)"
     exit 1
   fi
 
-  if ! prompt_yes_no "是否现在按成功模式创建 3G /swapfile 并继续安装？[y/N]: "; then
-    echo "已取消自动创建 swap。"
+  if ! prompt_yes_no "$(it swap_confirm)"; then
+    echo "$(it swap_cancel)"
     exit 1
   fi
 
-  echo "磁盘空间足够，继续执行脚本..."
+  echo "$(it disk_ok_continue)"
 
   if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
-    echo "检测到 /swapfile 已启用，跳过创建。"
+    echo "$(it swap_exists_skip)"
   else
     if [[ -f /swapfile ]]; then
       swapoff /swapfile >/dev/null 2>&1 || true
@@ -224,30 +437,28 @@ prepare_anolis_swap_like_success_case() {
 
   free -h || true
   grep '^/swapfile ' /etc/fstab || true
-  echo "Swap 安装成功！"
+  echo "$(it swap_success)"
 
-  echo "swap 校验结果："
+  echo "$(it swap_check)"
   swapon --show || true
   free -h || true
   grep -E 'SwapTotal|SwapFree' /proc/meminfo || true
 
   swap_total="$(get_swap_total_kb)"
   if [[ "${swap_total:-0}" -le 0 ]]; then
-    echo "错误: swap 创建后仍未生效，已停止继续安装。"
+    echo "$(it swap_invalid)"
     exit 1
   fi
 }
 
 install_cronie_anolis() {
   prepare_anolis_swap_like_success_case
-
-  echo "使用 yum 安装 cronie ..."
+  echo "$(it yum_install)"
   if yum -y install cronie --disablerepo="*" --enablerepo="BaseOS"; then
     restore_swappiness_after_install
     return 0
   fi
-
-  echo "错误: yum 安装 cronie 失败。"
+  echo "$(it yum_failed)"
   exit 1
 }
 
@@ -258,24 +469,21 @@ install_cronie_rhel_like() {
   fi
 
   if command -v yum >/dev/null 2>&1; then
-    echo "使用 yum 安装 cronie ..."
     yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
     return 0
   fi
 
   if command -v microdnf >/dev/null 2>&1; then
-    echo "使用 microdnf 安装 cronie ..."
     microdnf install -y cronie
     return 0
   fi
 
   if command -v dnf >/dev/null 2>&1; then
-    echo "使用 dnf 安装 cronie ..."
     dnf -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
     return 0
   fi
 
-  echo "错误: 未找到可用的包管理器（yum / microdnf / dnf）。"
+  echo "Package manager not found."
   exit 1
 }
 
@@ -311,8 +519,7 @@ install_cron_package() {
     return 0
   fi
 
-  echo "错误: 当前发行版暂未内置自动修复 cron 逻辑。"
-  echo "请手动安装 cron/cronie 后再运行本脚本。"
+  echo "Unsupported distribution for automatic cron installation."
   exit 1
 }
 
@@ -339,8 +546,6 @@ start_and_enable_cron_service() {
       service "$svc" status >/dev/null 2>&1
       return $?
       ;;
-    *)
-      ;;
   esac
 
   if [[ -x "/etc/init.d/$svc" ]]; then
@@ -356,17 +561,17 @@ ensure_cron_ready() {
   local svc=""
 
   if ! command -v crontab >/dev/null 2>&1; then
-    echo "未检测到 crontab，正在尝试自动安装 cron ..."
+    echo "$(it cron_install_try)"
     install_cron_package
   fi
 
   if ! command -v crontab >/dev/null 2>&1; then
-    echo "错误: 自动安装后仍未检测到 crontab。"
+    echo "$(it cron_auto_failed)"
     exit 1
   fi
 
   if ! svc="$(find_cron_service_name)"; then
-    echo "未检测到 cron 服务，正在尝试安装/修复 ..."
+    echo "$(it cron_service_try)"
     install_cron_package
     svc="$(find_cron_service_name || true)"
   fi
@@ -380,38 +585,35 @@ ensure_xui_installed() {
   if command -v x-ui >/dev/null 2>&1; then
     return 0
   fi
-
   if [[ -x /usr/local/x-ui/x-ui ]]; then
     return 0
   fi
-
   if [[ -f /etc/systemd/system/x-ui.service || -f /lib/systemd/system/x-ui.service ]]; then
     return 0
   fi
-
   if command -v systemctl >/dev/null 2>&1; then
     if systemctl status x-ui >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q '^x-ui\.service'; then
       return 0
     fi
   fi
-
-  echo "错误: 未检测到 3x-ui / x-ui。"
-  echo "本脚本仅适用于已安装并可正常使用的 3x-ui 环境。"
+  echo "$(it xui_missing1)"
+  echo "$(it xui_missing2)"
   exit 1
 }
 
 print_swap_notice() {
   if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
     echo
-    echo "提示：当前系统已启用 swap：/swapfile"
-    echo "当前 swappiness: $(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
-    echo "如后续确认不再需要，可执行："
+    echo "$(it swap_notice)"
+    printf "$(it swappiness_now)\n" "$(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
+    echo "$(it swap_remove_hint)"
     echo "  swapoff /swapfile"
     echo "  sed -i '\\|^/swapfile |d' /etc/fstab"
     echo "  rm -f /swapfile"
   fi
 }
 
+init_installer_language
 need_root
 require_cmd bash curl cmp install awk grep mktemp date xargs
 ensure_cron_ready
@@ -990,8 +1192,6 @@ start_and_enable_cron_service() {
       service "$svc" status >/dev/null 2>&1
       return $?
       ;;
-    *)
-      ;;
   esac
 
   if [[ -x "/etc/init.d/$svc" ]]; then
@@ -1072,6 +1272,7 @@ t() {
     zh_CN:menu_show_config) echo "查看当前配置" ;;
     zh_CN:menu_language) echo "切换语言" ;;
     zh_CN:menu_remove_task) echo "删除自动更新任务" ;;
+    zh_CN:menu_swap) echo "Swap 管理" ;;
     zh_CN:menu_uninstall) echo "一键卸载脚本" ;;
     zh_CN:menu_exit) echo "退出" ;;
     zh_CN:prompt_choice) echo "请输入选项" ;;
@@ -1150,6 +1351,21 @@ t() {
     zh_CN:lang_en) echo "English" ;;
     zh_CN:lang_ru) echo "Русский" ;;
     zh_CN:lang_fa) echo "فارسی" ;;
+    zh_CN:swap_title) echo "Swap 管理" ;;
+    zh_CN:swap_menu_status) echo "查看当前 swap 状态" ;;
+    zh_CN:swap_menu_resize) echo "修改 /swapfile 大小" ;;
+    zh_CN:swap_menu_delete) echo "删除全部 swap" ;;
+    zh_CN:swap_status_title) echo "当前 swap 状态" ;;
+    zh_CN:swap_swappiness) echo "当前 swappiness" ;;
+    zh_CN:swap_fstab) echo "fstab 中的 swap 配置" ;;
+    zh_CN:swap_none) echo "未检测到 swap" ;;
+    zh_CN:swap_size_prompt) echo "请输入新的 /swapfile 大小（单位 GB，例如 1、2、3）" ;;
+    zh_CN:swap_size_invalid) echo "请输入大于等于 1 的整数。" ;;
+    zh_CN:swap_resize_confirm) echo "确认按上述大小重新创建 /swapfile 吗？[y/N]" ;;
+    zh_CN:swap_resize_done) echo "swap 已重建完成。" ;;
+    zh_CN:swap_delete_confirm) echo "确认删除全部 swap 吗？该操作会关闭所有 swap，并清除 /etc/fstab 中的 swap 项。[y/N]" ;;
+    zh_CN:swap_delete_done) echo "全部 swap 已删除。" ;;
+    zh_CN:swap_cancel) echo "已取消操作。" ;;
 
     en_US:dep_missing) echo "Missing required command: %s" ;;
     en_US:main_title) echo "3xui Geo Auto Update Manager" ;;
@@ -1159,6 +1375,7 @@ t() {
     en_US:menu_show_config) echo "View current config" ;;
     en_US:menu_language) echo "Switch language" ;;
     en_US:menu_remove_task) echo "Remove scheduled task" ;;
+    en_US:menu_swap) echo "Swap management" ;;
     en_US:menu_uninstall) echo "One-click uninstall" ;;
     en_US:menu_exit) echo "Exit" ;;
     en_US:prompt_choice) echo "Enter your choice" ;;
@@ -1237,6 +1454,21 @@ t() {
     en_US:lang_en) echo "English" ;;
     en_US:lang_ru) echo "Русский" ;;
     en_US:lang_fa) echo "فارسی" ;;
+    en_US:swap_title) echo "Swap management" ;;
+    en_US:swap_menu_status) echo "View current swap status" ;;
+    en_US:swap_menu_resize) echo "Resize /swapfile" ;;
+    en_US:swap_menu_delete) echo "Delete all swap" ;;
+    en_US:swap_status_title) echo "Current swap status" ;;
+    en_US:swap_swappiness) echo "Current swappiness" ;;
+    en_US:swap_fstab) echo "Swap entries in fstab" ;;
+    en_US:swap_none) echo "No swap detected" ;;
+    en_US:swap_size_prompt) echo "Enter new /swapfile size in GB (for example 1, 2, 3)" ;;
+    en_US:swap_size_invalid) echo "Please enter an integer greater than or equal to 1." ;;
+    en_US:swap_resize_confirm) echo "Recreate /swapfile with the new size? [y/N]" ;;
+    en_US:swap_resize_done) echo "Swap has been recreated." ;;
+    en_US:swap_delete_confirm) echo "Delete all swap? This will disable all swap and remove swap entries from /etc/fstab. [y/N]" ;;
+    en_US:swap_delete_done) echo "All swap has been deleted." ;;
+    en_US:swap_cancel) echo "Operation canceled." ;;
 
     ru_RU:dep_missing) echo "Отсутствует обязательная команда: %s" ;;
     ru_RU:main_title) echo "Менеджер автообновления 3xui Geo" ;;
@@ -1246,6 +1478,7 @@ t() {
     ru_RU:menu_show_config) echo "Показать текущую конфигурацию" ;;
     ru_RU:menu_language) echo "Сменить язык" ;;
     ru_RU:menu_remove_task) echo "Удалить задачу автообновления" ;;
+    ru_RU:menu_swap) echo "Управление swap" ;;
     ru_RU:menu_uninstall) echo "Удалить скрипт" ;;
     ru_RU:menu_exit) echo "Выход" ;;
     ru_RU:prompt_choice) echo "Введите номер пункта" ;;
@@ -1324,6 +1557,21 @@ t() {
     ru_RU:lang_en) echo "English" ;;
     ru_RU:lang_ru) echo "Русский" ;;
     ru_RU:lang_fa) echo "فارسی" ;;
+    ru_RU:swap_title) echo "Управление swap" ;;
+    ru_RU:swap_menu_status) echo "Показать текущий swap" ;;
+    ru_RU:swap_menu_resize) echo "Изменить размер /swapfile" ;;
+    ru_RU:swap_menu_delete) echo "Удалить весь swap" ;;
+    ru_RU:swap_status_title) echo "Текущее состояние swap" ;;
+    ru_RU:swap_swappiness) echo "Текущее значение swappiness" ;;
+    ru_RU:swap_fstab) echo "Записи swap в fstab" ;;
+    ru_RU:swap_none) echo "Swap не обнаружен" ;;
+    ru_RU:swap_size_prompt) echo "Введите новый размер /swapfile в GB (например 1, 2, 3)" ;;
+    ru_RU:swap_size_invalid) echo "Введите целое число больше или равное 1." ;;
+    ru_RU:swap_resize_confirm) echo "Пересоздать /swapfile с новым размером? [y/N]" ;;
+    ru_RU:swap_resize_done) echo "Swap успешно пересоздан." ;;
+    ru_RU:swap_delete_confirm) echo "Удалить весь swap? Это отключит весь swap и удалит swap-записи из /etc/fstab. [y/N]" ;;
+    ru_RU:swap_delete_done) echo "Весь swap удалён." ;;
+    ru_RU:swap_cancel) echo "Операция отменена." ;;
 
     fa_IR:dep_missing) echo "دستور موردنیاز پیدا نشد: %s" ;;
     fa_IR:main_title) echo "مدیریت بروزرسانی خودکار Geo برای 3xui" ;;
@@ -1333,6 +1581,7 @@ t() {
     fa_IR:menu_show_config) echo "نمایش تنظیمات فعلی" ;;
     fa_IR:menu_language) echo "تغییر زبان" ;;
     fa_IR:menu_remove_task) echo "حذف زمان‌بندی خودکار" ;;
+    fa_IR:menu_swap) echo "مدیریت swap" ;;
     fa_IR:menu_uninstall) echo "حذف کامل اسکریپت" ;;
     fa_IR:menu_exit) echo "خروج" ;;
     fa_IR:prompt_choice) echo "گزینه را وارد کنید" ;;
@@ -1411,6 +1660,21 @@ t() {
     fa_IR:lang_en) echo "English" ;;
     fa_IR:lang_ru) echo "Русский" ;;
     fa_IR:lang_fa) echo "فارسی" ;;
+    fa_IR:swap_title) echo "مدیریت swap" ;;
+    fa_IR:swap_menu_status) echo "نمایش وضعیت فعلی swap" ;;
+    fa_IR:swap_menu_resize) echo "تغییر اندازه /swapfile" ;;
+    fa_IR:swap_menu_delete) echo "حذف همه swap" ;;
+    fa_IR:swap_status_title) echo "وضعیت فعلی swap" ;;
+    fa_IR:swap_swappiness) echo "swappiness فعلی" ;;
+    fa_IR:swap_fstab) echo "پیکربندی swap در fstab" ;;
+    fa_IR:swap_none) echo "هیچ swapی شناسایی نشد" ;;
+    fa_IR:swap_size_prompt) echo "اندازه جدید /swapfile را بر حسب GB وارد کنید (مثلاً 1، 2، 3)" ;;
+    fa_IR:swap_size_invalid) echo "لطفاً یک عدد صحیح بزرگ‌تر یا مساوی 1 وارد کنید." ;;
+    fa_IR:swap_resize_confirm) echo "آیا /swapfile با اندازه جدید دوباره ساخته شود؟ [y/N]" ;;
+    fa_IR:swap_resize_done) echo "swap با موفقیت بازسازی شد." ;;
+    fa_IR:swap_delete_confirm) echo "همه swapها حذف شوند؟ این کار همه swapها را غیرفعال می‌کند و ورودی‌های swap را از /etc/fstab پاک می‌کند. [y/N]" ;;
+    fa_IR:swap_delete_done) echo "همه swapها حذف شدند." ;;
+    fa_IR:swap_cancel) echo "عملیات لغو شد." ;;
 
     *) echo "$key" ;;
   esac
@@ -1529,6 +1793,116 @@ remove_cron() {
     | grep -Fv "/usr/local/bin/3xui-geo-runner.sh" \
     | awk 'NF' \
     | crontab -
+}
+
+show_swap_status() {
+  echo
+  echo "========== $(t swap_status_title) =========="
+  if swapon --show | awk 'NR>1 {exit 0} END {exit 1}'; then
+    swapon --show
+  else
+    echo "$(t swap_none)"
+  fi
+  echo
+  free -h || true
+  echo
+  echo "$(t swap_swappiness): $(cat /proc/sys/vm/swappiness 2>/dev/null || echo unknown)"
+  echo
+  echo "$(t swap_fstab):"
+  grep ' swap ' /etc/fstab || echo "  $(t not_set)"
+}
+
+resize_swapfile() {
+  local size_gb size_mb
+  read -rp "$(t swap_size_prompt): " size_gb
+
+  if [[ ! "$size_gb" =~ ^[1-9][0-9]*$ ]]; then
+    echo "$(t swap_size_invalid)"
+    return 1
+  fi
+
+  if ! read -rp "$(t swap_resize_confirm) " ans || [[ ! "$ans" =~ ^([yY]|yes|YES)$ ]]; then
+    echo "$(t swap_cancel)"
+    return 0
+  fi
+
+  size_mb=$(( size_gb * 1024 ))
+
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "/swapfile"; then
+    swapoff /swapfile >/dev/null 2>&1 || true
+  fi
+
+  rm -f /swapfile
+  dd if=/dev/zero of=/swapfile bs=1M count="$size_mb" status=progress
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+
+  if grep -q '^/swapfile ' /etc/fstab 2>/dev/null; then
+    sed -i '\|^/swapfile |d' /etc/fstab
+  fi
+  echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+
+  echo "$(t swap_resize_done)"
+  show_swap_status
+}
+
+delete_all_swap() {
+  local ans
+  read -rp "$(t swap_delete_confirm) " ans
+  if [[ ! "$ans" =~ ^([yY]|yes|YES)$ ]]; then
+    echo "$(t swap_cancel)"
+    return 0
+  fi
+
+  local tmpfile
+  tmpfile="$(mktemp)"
+
+  awk '$3=="swap"{print $1}' /etc/fstab 2>/dev/null > "$tmpfile" || true
+  swapon --show=NAME --noheadings 2>/dev/null >> "$tmpfile" || true
+
+  sort -u "$tmpfile" -o "$tmpfile"
+
+  swapoff -a >/dev/null 2>&1 || true
+
+  if [[ -f /etc/fstab ]]; then
+    awk '$3!="swap"' /etc/fstab > /etc/fstab.3xui-geo.tmp && mv /etc/fstab.3xui-geo.tmp /etc/fstab
+  fi
+
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    if [[ -f "$target" ]]; then
+      rm -f "$target"
+    fi
+  done < "$tmpfile"
+
+  rm -f "$tmpfile"
+  rm -f /etc/sysctl.d/99-3xui-geo-swap.conf
+  sysctl -w vm.swappiness=30 >/dev/null 2>&1 || true
+
+  echo "$(t swap_delete_done)"
+  show_swap_status
+}
+
+swap_menu() {
+  while true; do
+    echo
+    echo "========== $(t swap_title) =========="
+    echo "1. $(t swap_menu_status)"
+    echo "2. $(t swap_menu_resize)"
+    echo "3. $(t swap_menu_delete)"
+    echo "0. $(t back)"
+    echo
+
+    read -rp "$(t prompt_choice): " choice
+    case "$choice" in
+      1) show_swap_status ;;
+      2) resize_swapfile ;;
+      3) delete_all_swap ;;
+      0) return 0 ;;
+      *) echo "$(t invalid_input)" ;;
+    esac
+  done
 }
 
 show_config() {
@@ -1826,7 +2200,8 @@ main_menu() {
     echo "4. $(t menu_show_config)"
     echo "5. $(t menu_language)"
     echo "6. $(t menu_remove_task)"
-    echo "7. $(t menu_uninstall)"
+    echo "7. $(t menu_swap)"
+    echo "8. $(t menu_uninstall)"
     echo "0. $(t menu_exit)"
     echo
 
@@ -1844,7 +2219,8 @@ main_menu() {
           echo "$(t remove_task_done)"
         fi
         ;;
-      7)
+      7) swap_menu ;;
+      8)
         bash "$UNINSTALLER"
         exit 0
         ;;
@@ -1884,12 +2260,12 @@ chmod +x "$RUNNER" "$MANAGER" "$UNINSTALLER" "$WRAPPER_SHORT" "$WRAPPER_ALT"
 mkdir -p "$STATE_DIR"
 touch "$LOG_FILE"
 
-echo "安装完成。"
-echo "可用命令："
-echo "  xgeo                打开管理菜单"
-echo "  3xui-geo            打开管理菜单"
-echo "  xgeo uninstall      一键卸载"
+echo "$(it install_done)"
+echo "$(it commands)"
+echo "  xgeo                $(it open_menu)"
+echo "  3xui-geo            $(it open_menu)"
+echo "  xgeo uninstall      $(it one_click_uninstall)"
 print_swap_notice
 echo
-echo "现在为你启动管理菜单..."
+echo "$(it start_menu)"
 exec /usr/local/bin/3xui-geo-manager.sh
