@@ -1,6 +1,6 @@
 # 3xui Geo Updater
 
-[English](README.md) | [简体中文](README_zh.md) | [Русский](README_ru.md) | [فارسی](README_fa.md)
+[English](README.md) | [简体中文](README_zh.md) | [日本語](README_ja.md) | [Русский](README_ru.md) | [فارسی](README_fa.md)
 
 A lightweight, multilingual Geo file auto-updater for **3x-ui**, with source selection, scheduled updates, logging, and safe restart behavior.
 
@@ -372,6 +372,7 @@ SOFTWARE.
 ├── LICENSE
 ├── README.md
 ├── README_fa.md
+├── README_ja.md
 ├── README_ru.md
 ├── README_zh.md
 └── screenshots/
