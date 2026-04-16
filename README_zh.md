@@ -27,10 +27,17 @@
 - **仅当文件实际发生改变时才重启 x-ui**
 - 日志记录支持
 - 内置卸载选项
+- 内置 Swap (虚拟内存) 管理菜单
 - 快捷命令：
   - `xgeo`
   - `3xui-geo`
-- 自动为各大主流 Linux 发行版安装并修复 cron 服务启动
+- 自动选择定时器后端
+  - 标准系统使用系统自带的 cron
+  - 受支持的小内存 RHEL 系系统自动使用 **Supercronic**
+- Supercronic 模式包含：
+  - systemd 服务管理
+  - 开机自启
+  - 故障自动重启
 
 ## 支持的数据源
 
@@ -76,24 +83,19 @@
 - 已安装并正常运行的 `3x-ui`
 - Root 权限
 - 系统需具备以下基础工具：
-  - `bash`
-  - `curl`
-  - `cmp`
-  - `install`
-  - `awk`
-  - `grep`
-  - `crontab`
-  - `mktemp`
-  - `date`
-  - `xargs`
+  - `bash`, `curl`, `cmp`, `install`, `awk`, `grep`, `mktemp`, `date`, `xargs`
 
 本安装程序主要依赖标准 Linux 系统上通常自带的通用实用工具。
-在主流 Linux 发行版上，如果系统缺失 cron，安装程序会自动尝试安装并启动它。
+
+在标准系统上，如果系统缺失 cron，安装程序会自动尝试安装并启动它。
+在受支持的小内存 RHEL 系系统上，安装程序将自动切换为使用 **Supercronic** 而非系统 cron。
 
 ## 安装指南
 
 ### 快速安装
-在主流 Linux 发行版上，如果缺失 cron，安装程序会自动尝试安装并启动它。
+安装程序会自动选择定时器后端：
+- 在标准系统上，它使用系统 cron 并会在需要时尝试安装/启动它。
+- 在受支持的小内存 RHEL 系系统上，它会自动切换为 **Supercronic**。
 ```bash
 curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
@@ -166,6 +168,7 @@ xgeo uninstall
 - 查看当前配置
 - 切换显示语言
 - 移除定时任务
+- Swap (虚拟内存) 管理
 - 卸载本脚本
 
 ## 定时模式说明
@@ -176,6 +179,32 @@ xgeo uninstall
 - **每周 (Weekly):** 每周指定某天的凌晨 03:00 运行
 - **每 N 天 (Every N Days):** 每隔 N 天的凌晨 03:00 运行
 - **自定义 (Custom Cron):** 供高级用户使用标准的 cron 表达式进行完全控制
+
+## 定时器后端说明 (Scheduler Backend)
+
+本项目支持两种定时器后端：
+
+### 1. 系统 cron
+用于标准系统。
+如果 cron 缺失，安装程序会自动尝试安装并启动它。
+
+### 2. Supercronic
+在受支持的小内存 RHEL 系系统上自动使用。
+
+目前，当系统总内存低于 **2 GiB** 时，以下系统将被强制使用 Supercronic 模式：
+- Anolis
+- CentOS Stream
+- Oracle Linux
+- AlmaLinux
+- Rocky Linux
+- Alibaba Cloud Linux
+
+在 Supercronic 模式下，安装程序将：
+- 下载 Supercronic 的独立可执行文件
+- 创建专用的 crontab 文件
+- 创建 systemd 服务
+- 启用开机自动启动
+- 启用故障自动重启
 
 ## 日志记录
 
@@ -216,6 +245,11 @@ tail -f /var/log/3xui-geo-updater.log
 日志文件：
 - `/var/log/3xui-geo-updater.log`
 
+当启用 Supercronic 模式时，安装程序还会创建：
+- `/usr/local/bin/supercronic`
+- `/etc/3xui-geo-updater.cron`
+- `/etc/systemd/system/3xui-geo-supercronic.service`
+
 ## 安全机制
 
 本项目内置了多项旨在保障系统安全的机制：
@@ -224,7 +258,9 @@ tail -f /var/log/3xui-geo-updater.log
 - 仅在文件实际变化时重启服务
 - 进程锁防止并发执行冲突
 - 运行前检查必要的系统依赖
-- 在主流 Linux 发行版上自动安装并修复 cron 服务启动
+- 根据系统环境自动选择定时器后端
+- 在标准系统上自动安装并修复 cron 服务启动
+- 在受支持的小内存 RHEL 系系统上自动降级使用 Supercronic
 - 重新配置时自动对定时任务进行去重处理
 - 提供专用的、清理彻底的卸载脚本
 - 卸载后提示清理 shell 缓存
@@ -234,7 +270,8 @@ tail -f /var/log/3xui-geo-updater.log
 本项目专为已经安装并正常运行 3x-ui 的服务器设计。
 它不会帮您安装 3x-ui 本身。
 
-在主流 Linux 发行版系列上，如果缺失 cron，安装程序会自动尝试安装并启动它。
+在标准的 Linux 系统上，如果缺失 cron，安装程序会自动尝试安装并启动它。
+在受支持的小内存 RHEL 系系统上，安装程序将自动切换为使用 Supercronic 而非依赖系统 cron。
 
 ## 开源声明与免责条款
 
@@ -243,6 +280,7 @@ tail -f /var/log/3xui-geo-updater.log
 
 - 3x-ui
 - Xray
+- Supercronic
 - 任何上游 Geo 规则的维护者
 - 任何主机提供商或服务运营商
 
