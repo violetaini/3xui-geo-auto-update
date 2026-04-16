@@ -303,7 +303,6 @@ should_force_supercronic() {
 }
 
 persist_scheduler_backend() {
-  load_installer_config || true
   save_installer_config
 }
 
@@ -537,10 +536,11 @@ ensure_scheduler_ready() {
 
   if [[ "$SCHEDULER_BACKEND" == "supercronic" ]]; then
     ensure_supercronic_ready
-  else
-    disable_supercronic_service_if_exists
-    ensure_cron_ready
+    return 0
   fi
+
+  disable_supercronic_service_if_exists
+  ensure_cron_ready
 }
 
 ensure_xui_installed() {
