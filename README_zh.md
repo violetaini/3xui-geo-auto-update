@@ -33,10 +33,11 @@
   - `3xui-geo`
 - 自动选择定时器后端
   - 标准系统使用系统自带的 cron
-  - 受支持的小内存 RHEL 系系统自动使用 **Supercronic**
+  - 受支持的小内存 RHEL 系系统会首先检查是否已有可用的内置系统 cron
+  - 如果没有可用的系统 cron，安装程序会自动切换到 Supercronic
 - Supercronic 模式包含：
   - systemd 服务管理
-  - 开机自启
+  - 开机自动启动
   - 故障自动重启
 
 ## 支持的数据源
@@ -54,6 +55,36 @@
 3. **runetfreedom**
    - `geoip_RU.dat`
    - `geosite_RU.dat`
+
+## 支持的操作系统
+
+安装程序目前专为以下 Linux 发行版系列设计并进行了测试：
+
+- Alpine
+- Debian
+- Kali
+- Ubuntu
+- Anolis
+- RHEL
+- AlmaLinux
+- Rocky Linux
+- Oracle Linux
+- Alibaba Cloud Linux
+- OpenCloudOS
+- CentOS Stream
+- Fedora
+- openEuler
+- Arch Linux
+
+**注意：**
+
+- **Debian / Kali / Ubuntu** 等 Debian 系系统遵循 `apt + cron` 的安装路径
+- **Anolis / RHEL / AlmaLinux / Rocky / Oracle / Alibaba Cloud Linux / OpenCloudOS / CentOS Stream / Fedora / openEuler** 等系统遵循 RHEL 系定时器路径
+- 在受支持的小内存 RHEL 系系统上，安装程序首先会检查是否已存在可用的内置系统 cron
+- 如果存在可用的内置系统 cron，则直接使用原生的系统 cron
+- 如果不存在，安装程序将自动切换为使用 **Supercronic**
+
+如果所需的工具和 cron 环境已经存在，其他 Linux 发行版可能依然可以工作，但它们目前不是主要的受支持目标。
 
 ## 工作原理
 
@@ -88,14 +119,17 @@
 本安装程序主要依赖标准 Linux 系统上通常自带的通用实用工具。
 
 在标准系统上，如果系统缺失 cron，安装程序会自动尝试安装并启动它。
-在受支持的小内存 RHEL 系系统上，安装程序将自动切换为使用 **Supercronic** 而非系统 cron。
+
+在受支持的小内存 RHEL 系系统上，安装程序会首先检查是否已存在可用的内置系统 cron。如果存在，将使用原生的系统 cron；否则，安装程序会自动切换到 **Supercronic**。
 
 ## 安装指南
 
 ### 快速安装
 安装程序会自动选择定时器后端：
 - 在标准系统上，它使用系统 cron 并会在需要时尝试安装/启动它。
-- 在受支持的小内存 RHEL 系系统上，它会自动切换为 **Supercronic**。
+- 在受支持的小内存 RHEL 系系统上，它首先会检查是否已有可用的内置系统 cron。
+- 如果有可用的内置系统 cron，则直接使用。
+- 否则，安装程序会自动切换到 **Supercronic**。
 ```bash
 curl -fsSL -o install-3xui-geo-updater.sh [https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh](https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh) && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
@@ -160,8 +194,6 @@ xgeo uninstall
 
 ## 菜单概览
 
-管理面板支持以下操作：
-
 - 配置或修改自动更新
 - 立即运行更新检查
 - 查看运行日志
@@ -180,24 +212,35 @@ xgeo uninstall
 - **每 N 天 (Every N Days):** 每隔 N 天的凌晨 03:00 运行
 - **自定义 (Custom Cron):** 供高级用户使用标准的 cron 表达式进行完全控制
 
-## 定时器后端说明 (Scheduler Backend)
+## 定时器后端 (Scheduler Backend)
 
 本项目支持两种定时器后端：
 
 ### 1. 系统 cron
 用于标准系统。
+
 如果 cron 缺失，安装程序会自动尝试安装并启动它。
 
 ### 2. Supercronic
-在受支持的小内存 RHEL 系系统上自动使用。
+仅在受支持的小内存 RHEL 系系统上、且有需要时使用。
 
-目前，当系统总内存低于 **2 GiB** 时，以下系统将被强制使用 Supercronic 模式：
+目前，安装程序会检查以下系统以进行小内存定时器降级回退：
+
 - Anolis
-- CentOS Stream
-- Oracle Linux
+- RHEL
 - AlmaLinux
 - Rocky Linux
+- Oracle Linux
+- OpenCloudOS
+- CentOS Stream
+- Fedora
+- openEuler
 - Alibaba Cloud Linux
+
+当系统总内存低于 **2 GiB** 时，安装程序会首先检查是否已存在可用的内置系统 cron。
+
+- 如果找到可用的内置系统 cron，安装程序继续使用原生系统 cron。
+- 如果未找到可用的内置系统 cron，安装程序将自动切换至 **Supercronic**。
 
 在 Supercronic 模式下，安装程序将：
 - 下载 Supercronic 的独立可执行文件
@@ -260,7 +303,7 @@ tail -f /var/log/3xui-geo-updater.log
 - 运行前检查必要的系统依赖
 - 根据系统环境自动选择定时器后端
 - 在标准系统上自动安装并修复 cron 服务启动
-- 在受支持的小内存 RHEL 系系统上，**当没有可用的内置 cron 时**，自动降级使用 Supercronic
+- 在受支持的小内存 RHEL 系系统上，**当没有可用的内置 cron 时**自动降级使用 Supercronic
 - 重新配置时自动对定时任务进行去重处理
 - 提供专用的、清理彻底的卸载脚本
 - 卸载后提示清理 shell 缓存
@@ -273,7 +316,9 @@ tail -f /var/log/3xui-geo-updater.log
 在标准的 Linux 系统上，如果缺失 cron，安装程序会自动尝试安装并启动它。
 
 在受支持的小内存 RHEL 系系统上，安装程序会首先检查是否已存在可用的内置系统 cron。
+
 如果存在，将使用原生的系统 cron。
+
 如果不存在，安装程序将自动切换为使用 Supercronic。
 
 ## 开源声明与免责条款
@@ -311,7 +356,6 @@ tail -f /var/log/3xui-geo-updater.log
 ### 法律声明
 本代码仓库仅用于教育、运维和管理自动化目的。
 本仓库中的任何内容均不应被解释为法律建议、合规建议，或在任何国家/地区或环境中保证合法使用的承诺。
-如有法律或合规方面的顾虑，请咨询具备资格的专业人士。
 
 ## 开源协议
 
@@ -355,18 +399,3 @@ SOFTWARE.
 └── screenshots/
     └── main-menu-preview.png
 ```
-
-## 参与贡献
-
-欢迎提交 Issue 和 Pull Request。
-如果您希望为本项目做出贡献，请：
-
-- 清晰地描述您遇到的问题
-- 说明您的运行环境
-- 如果适用，请附带相关日志
-- 保持 PR 的修改范围专注，以便于代码审查
-
-## 鸣谢
-
-感谢 3x-ui 的维护团队以及各位上游 Geo 规则提供者的辛勤工作。
-如果这个项目对您有帮助，欢迎给仓库点个 Star。
