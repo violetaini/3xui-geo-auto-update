@@ -27,10 +27,17 @@ This tool helps keep Geo-related rule files up to date for 3x-ui-based deploymen
 - Restarts **x-ui only when files actually change**
 - Logging support
 - Built-in uninstall option
+- Built-in swap management menu
 - Shortcut commands:
   - `xgeo`
   - `3xui-geo`
-- Automatic cron installation and startup repair for major Linux distributions
+- Automatic scheduler backend selection
+  - Standard systems use system cron
+  - Low-memory supported RHEL-like systems automatically use **Supercronic**
+- Supercronic mode includes:
+  - systemd service management
+  - automatic startup on boot
+  - automatic restart on failure
 
 ## Supported Sources
 
@@ -82,17 +89,23 @@ This project adds:
   - `install`
   - `awk`
   - `grep`
-  - `crontab`
   - `mktemp`
   - `date`
   - `xargs`
+
 This installer relies mostly on common Linux utilities that are usually available on standard Linux systems.
-On major Linux distributions, the installer will automatically try to install and start cron if it is missing.
+
+On standard systems, the installer will try to install and start cron automatically if needed.
+
+On supported low-memory RHEL-like systems, the installer will automatically switch to **Supercronic** instead of relying on system cron.
 
 ## Installation
 
 ### Quick install
-The installer will automatically try to install and start cron on major Linux distributions if it is missing.
+The installer automatically selects the scheduler backend:
+
+- On standard systems, it uses system cron and will try to install/start it if needed
+- On supported low-memory RHEL-like systems, it automatically switches to **Supercronic**
 ```bash
 curl -fsSL -o install-3xui-geo-updater.sh https://raw.githubusercontent.com/violetaini/3xui-geo-auto-update/main/install-3xui-geo-updater.sh && chmod +x install-3xui-geo-updater.sh && bash install-3xui-geo-updater.sh
 ```
@@ -165,6 +178,7 @@ The manager supports:
 - View current configuration
 - Switch language
 - Remove scheduled task
+- Swap management
 - Uninstall script
 
 ## Scheduling Modes
@@ -175,6 +189,34 @@ The updater supports the following scheduling modes:
 - **Weekly:** Runs once a week at 03:00 on the selected weekday
 - **Every N Days:** Runs every N days at 03:00
 - **Custom Cron:** For advanced users who want full scheduling control
+
+## Scheduler Backend
+
+This project supports two scheduler backends:
+
+### 1. System cron
+Used on standard systems.
+If cron is missing, the installer will try to install and start it automatically.
+
+### 2. Supercronic
+Used automatically on supported low-memory RHEL-like systems.
+
+Currently, Supercronic mode is forced on the following systems when total memory is below **2 GiB**:
+
+- Anolis
+- CentOS Stream
+- Oracle Linux
+- AlmaLinux
+- Rocky Linux
+- Alibaba Cloud Linux
+
+In Supercronic mode, the installer will:
+
+- Download the Supercronic standalone binary
+- Create a dedicated crontab file
+- Create a systemd service
+- Enable auto-start on boot
+- Enable automatic restart on failure
 
 ## Logging
 
@@ -198,6 +240,8 @@ tail -f /var/log/3xui-geo-updater.log
 
 ## Installed Components
 
+## Installed Components
+
 The installer creates the following files:
 
 - `/usr/local/bin/3xui-geo-runner.sh`
@@ -215,6 +259,14 @@ State directory:
 Log file:
 - `/var/log/3xui-geo-updater.log`
 
+When Supercronic mode is enabled, the installer also creates:
+
+- `/usr/local/bin/supercronic`
+- `/etc/3xui-geo-updater.cron`
+- `/etc/systemd/system/3xui-geo-supercronic.service`
+
+## Safety Behavior
+
 ## Safety Behavior
 
 This project includes several safety-oriented behaviors:
@@ -223,7 +275,9 @@ This project includes several safety-oriented behaviors:
 - Restart only on actual file changes
 - Locking to prevent concurrent runs
 - Dependency checks before execution
-- Automatic cron installation and startup repair on major Linux distributions
+- Automatic scheduler backend selection based on system environment
+- Automatic cron installation and startup repair on standard systems
+- Automatic Supercronic fallback on supported low-memory RHEL-like systems
 - Scheduled task de-duplication during reconfiguration
 - Dedicated uninstall script
 - Shell cache reminder after uninstall
@@ -233,7 +287,9 @@ This project includes several safety-oriented behaviors:
 This project is intended for servers where 3x-ui is already installed and working correctly.
 It does not install 3x-ui itself.
 
-On major Linux distribution families, the installer will automatically try to install and start cron if it is missing.
+On standard Linux systems, the installer will automatically try to install and start cron if it is missing.
+
+On supported low-memory RHEL-like systems, the installer will automatically switch to Supercronic instead of relying on system cron.
 
 ## Open Source Notice and Disclaimer
 
@@ -242,6 +298,7 @@ It is not affiliated with, endorsed by, or officially supported by:
 
 - 3x-ui
 - Xray
+- Supercronic
 - Any upstream Geo rule maintainer
 - Any hosting provider or service operator
 
