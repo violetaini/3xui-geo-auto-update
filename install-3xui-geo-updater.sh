@@ -207,10 +207,9 @@ prepare_anolis_swap_like_success_case() {
 
 install_cronie_rhel_like() {
   if command -v yum >/dev/null 2>&1; then
-    echo "执行 yum clean all ..."
-    yum clean all >/dev/null 2>&1 || true
+    
     echo "使用 yum 安装 cronie ..."
-    yum -y --setopt=install_weak_deps=False --setopt=max_parallel_downloads=1 --noplugins install cronie
+    yum -y install cronie --disablerepo="*" --enablerepo="BaseOS"
     return 0
   fi
 
