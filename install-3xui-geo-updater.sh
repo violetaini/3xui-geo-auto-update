@@ -55,7 +55,7 @@ it() {
     zh_CN:invalid_input) echo "输入无效。" ;;
     zh_CN:need_root) echo "请使用 root 用户运行安装脚本。" ;;
     zh_CN:dep_missing) echo "缺少依赖命令: %s" ;;
-    zh_CN:supercronic_forced) echo "检测到低内存服务器，已强制启用 Supercronic 调度方案。" ;;
+    zh_CN:supercronic_forced) echo "检测到低内存服务器且系统未提供可用 cron，已自动启用 Supercronic 调度方案。" ;;
     zh_CN:supercronic_download) echo "正在下载 Supercronic ..." ;;
     zh_CN:supercronic_ready) echo "Supercronic 已就绪。" ;;
     zh_CN:supercronic_arch_error) echo "错误: 当前架构暂未内置 Supercronic 下载逻辑。" ;;
@@ -82,7 +82,7 @@ it() {
     en_US:invalid_input) echo "Invalid input." ;;
     en_US:need_root) echo "Please run the installer as root." ;;
     en_US:dep_missing) echo "Missing required command: %s" ;;
-    en_US:supercronic_forced) echo "A low-memory server was detected. Supercronic has been forced as the scheduler backend." ;;
+    en_US:supercronic_forced) echo "A low-memory server without a usable built-in cron was detected. Supercronic has been enabled automatically." ;;
     en_US:supercronic_download) echo "Downloading Supercronic ..." ;;
     en_US:supercronic_ready) echo "Supercronic is ready." ;;
     en_US:supercronic_arch_error) echo "Error: Supercronic download is not built in for the current architecture." ;;
@@ -109,7 +109,7 @@ it() {
     ru_RU:invalid_input) echo "Неверный ввод." ;;
     ru_RU:need_root) echo "Пожалуйста, запустите установщик от root." ;;
     ru_RU:dep_missing) echo "Отсутствует обязательная команда: %s" ;;
-    ru_RU:supercronic_forced) echo "Обнаружен сервер с малым объёмом памяти. Supercronic принудительно выбран как планировщик." ;;
+    ru_RU:supercronic_forced) echo "Обнаружен сервер с малым объёмом памяти без доступного системного cron. Supercronic был включён автоматически." ;;
     ru_RU:supercronic_download) echo "Загрузка Supercronic ..." ;;
     ru_RU:supercronic_ready) echo "Supercronic готов." ;;
     ru_RU:supercronic_arch_error) echo "Ошибка: для текущей архитектуры не встроена загрузка Supercronic." ;;
@@ -136,7 +136,7 @@ it() {
     fa_IR:invalid_input) echo "ورودی نامعتبر است." ;;
     fa_IR:need_root) echo "لطفاً نصب‌کننده را با کاربر root اجرا کنید." ;;
     fa_IR:dep_missing) echo "دستور موردنیاز پیدا نشد: %s" ;;
-    fa_IR:supercronic_forced) echo "سرور کم‌حافظه شناسایی شد و Supercronic به‌صورت اجباری به‌عنوان زمان‌بند فعال شد." ;;
+    fa_IR:supercronic_forced) echo "سرور کم‌حافظه‌ای شناسایی شد که cron سیستمی قابل‌استفاده ندارد؛ Supercronic به‌صورت خودکار فعال شد." ;;
     fa_IR:supercronic_download) echo "در حال دانلود Supercronic ..." ;;
     fa_IR:supercronic_ready) echo "Supercronic آماده است." ;;
     fa_IR:supercronic_arch_error) echo "خطا: برای معماری فعلی، دانلود Supercronic در اسکریپت تعبیه نشده است." ;;
@@ -158,6 +158,14 @@ it() {
     fa_IR:install_stuck_hint) echo "نکته: اگر هنگام نصب سیستم گیر کرد یا اتصال SSH قطع شد، لطفاً cron/cronie را به‌صورت دستی نصب کنید." ;;
 
     *) echo "$key" ;;
+  esac
+}
+
+installer_backend_name() {
+  case "${SCHEDULER_BACKEND:-cron}" in
+    cron) it backend_cron ;;
+    supercronic) it backend_supercronic ;;
+    *) echo "${SCHEDULER_BACKEND:-cron}" ;;
   esac
 }
 
@@ -268,6 +276,21 @@ find_cron_service_name() {
   return 1
 }
 
+has_builtin_cron() {
+  local svc=""
+  if ! command -v crontab >/dev/null 2>&1; then
+    return 1
+  fi
+  svc="$(find_cron_service_name || true)"
+  if [[ -n "$svc" ]]; then
+    return 0
+  fi
+  if [[ -x /etc/init.d/cron || -x /etc/init.d/crond || -x /etc/init.d/cronie || -x /etc/init.d/dcron ]]; then
+    return 0
+  fi
+  return 1
+}
+
 get_mem_total_kb() {
   awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0
 }
@@ -286,7 +309,7 @@ is_special_rhel_like_os() {
   esac
 }
 
-should_force_supercronic() {
+should_use_supercronic() {
   local mem_total_kb
   mem_total_kb="$(get_mem_total_kb)"
 
@@ -298,7 +321,15 @@ should_force_supercronic() {
     return 1
   fi
 
-  [[ "${mem_total_kb:-0}" -lt 2097152 ]]
+  if [[ "${mem_total_kb:-0}" -ge 2097152 ]]; then
+    return 1
+  fi
+
+  if has_builtin_cron; then
+    return 1
+  fi
+
+  return 0
 }
 
 persist_scheduler_backend() {
@@ -349,8 +380,8 @@ ensure_supercronic_binary() {
   fi
 
   url="https://github.com/aptible/supercronic/releases/latest/download/${asset}"
-
   echo "$(it supercronic_download)"
+
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL -o "$SUPERCRONIC_BIN" "$url"
   elif command -v wget >/dev/null 2>&1; then
@@ -391,12 +422,11 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 EOF
-
   systemctl daemon-reload
 }
 
 detect_scheduler_backend() {
-  if should_force_supercronic; then
+  if should_use_supercronic; then
     SCHEDULER_BACKEND="supercronic"
     echo "$(it supercronic_forced)"
   else
@@ -575,7 +605,7 @@ print_swap_notice() {
 
 init_installer_language
 need_root
-require_cmd bash curl cmp install awk grep mktemp date xargs
+require_cmd bash cmp install awk grep mktemp date xargs
 ensure_scheduler_ready
 ensure_xui_installed
 
@@ -1063,7 +1093,6 @@ CONFIG="/etc/3xui-geo-updater.conf"
 LOG_FILE="/var/log/3xui-geo-updater.log"
 CRON_MARK="# 3xui-geo-updater"
 
-SUPERCRONIC_BIN="/usr/local/bin/supercronic"
 SUPERCRONIC_CRONTAB="/etc/3xui-geo-updater.cron"
 SUPERCRONIC_SERVICE_NAME="3xui-geo-supercronic.service"
 
@@ -1833,86 +1862,6 @@ remove_schedule() {
   remove_cron
 }
 
-show_config() {
-  echo
-  echo "========== $(t current_config) =========="
-  echo "$(t enabled_sources):"
-  show_selected_sources "$SOURCES"
-  echo
-  echo "$(t schedule_mode):"
-  case "$MODE" in
-    daily)
-      echo "  $(t mode_daily)"
-      ;;
-    weekly)
-      printf "  $(t mode_weekly)\n" "$(weekday_name_local "$WEEKDAY")"
-      ;;
-    interval)
-      printf "  $(t mode_interval)\n" "${INTERVAL_DAYS:-1}"
-      ;;
-    custom)
-      echo "  $(t mode_custom)"
-      ;;
-    *)
-      echo "  $MODE"
-      ;;
-  esac
-  echo
-  echo "$(t cron_actual):"
-  echo "  ${CRON_SCHEDULE:-$(t not_set)}"
-  echo
-  echo "$(t scheduler_backend):"
-  echo "  $(backend_name_local "${SCHEDULER_BACKEND:-cron}")"
-  echo
-  echo "$(t current_language):"
-  echo "  $(lang_name_local "$LANGUAGE")"
-  echo
-  echo "$(t current_cron):"
-  if [[ "${SCHEDULER_BACKEND:-cron}" == "supercronic" ]]; then
-    if [[ -f "$SUPERCRONIC_CRONTAB" ]]; then
-      grep -v '^[[:space:]]*$' "$SUPERCRONIC_CRONTAB" | grep -v '^[[:space:]]*#' || echo "  $(t not_set)"
-    else
-      echo "  $(t not_set)"
-    fi
-    echo
-    echo "$(t service_status):"
-    systemctl is-enabled "$SUPERCRONIC_SERVICE_NAME" 2>/dev/null || echo "  $(t not_set)"
-  else
-    if command -v crontab >/dev/null 2>&1; then
-      crontab -l 2>/dev/null | grep -F "$CRON_MARK" || echo "  $(t not_set)"
-    else
-      echo "  $(t not_set)"
-    fi
-  fi
-  echo
-  echo "$(t log_file):"
-  echo "  $LOG_FILE"
-}
-
-show_logs() {
-  touch "$LOG_FILE"
-
-  while true; do
-    echo
-    echo "========== $(t logs_title) =========="
-    echo "1. $(t logs_50)"
-    echo "2. $(t logs_100)"
-    echo "3. $(t logs_follow)"
-    echo "0. $(t back)"
-    echo
-
-    read -rp "$(t prompt_choice): " c
-
-    case "$c" in
-      1) tail -n 50 "$LOG_FILE" ;;
-      2) tail -n 100 "$LOG_FILE" ;;
-      3) tail -f "$LOG_FILE" ;;
-      0) return 0 ;;
-      *) echo "$(t invalid_input)" ;;
-    esac
-  done
-}
-
 show_swap_status() {
   echo
   echo "========== $(t swap_status_title) =========="
@@ -2017,6 +1966,86 @@ swap_menu() {
       1) show_swap_status ;;
       2) resize_swapfile ;;
       3) delete_all_swap ;;
+      0) return 0 ;;
+      *) echo "$(t invalid_input)" ;;
+    esac
+  done
+}
+
+show_config() {
+  echo
+  echo "========== $(t current_config) =========="
+  echo "$(t enabled_sources):"
+  show_selected_sources "$SOURCES"
+  echo
+  echo "$(t schedule_mode):"
+  case "$MODE" in
+    daily)
+      echo "  $(t mode_daily)"
+      ;;
+    weekly)
+      printf "  $(t mode_weekly)\n" "$(weekday_name_local "$WEEKDAY")"
+      ;;
+    interval)
+      printf "  $(t mode_interval)\n" "${INTERVAL_DAYS:-1}"
+      ;;
+    custom)
+      echo "  $(t mode_custom)"
+      ;;
+    *)
+      echo "  $MODE"
+      ;;
+  esac
+  echo
+  echo "$(t cron_actual):"
+  echo "  ${CRON_SCHEDULE:-$(t not_set)}"
+  echo
+  echo "$(t scheduler_backend):"
+  echo "  $(backend_name_local "${SCHEDULER_BACKEND:-cron}")"
+  echo
+  echo "$(t current_language):"
+  echo "  $(lang_name_local "$LANGUAGE")"
+  echo
+  echo "$(t current_cron):"
+  if [[ "${SCHEDULER_BACKEND:-cron}" == "supercronic" ]]; then
+    if [[ -f "$SUPERCRONIC_CRONTAB" ]]; then
+      grep -v '^[[:space:]]*$' "$SUPERCRONIC_CRONTAB" | grep -v '^[[:space:]]*#' || echo "  $(t not_set)"
+    else
+      echo "  $(t not_set)"
+    fi
+    echo
+    echo "$(t service_status):"
+    systemctl is-enabled "$SUPERCRONIC_SERVICE_NAME" 2>/dev/null || echo "  $(t not_set)"
+  else
+    if command -v crontab >/dev/null 2>&1; then
+      crontab -l 2>/dev/null | grep -F "$CRON_MARK" || echo "  $(t not_set)"
+    else
+      echo "  $(t not_set)"
+    fi
+  fi
+  echo
+  echo "$(t log_file):"
+  echo "  $LOG_FILE"
+}
+
+show_logs() {
+  touch "$LOG_FILE"
+
+  while true; do
+    echo
+    echo "========== $(t logs_title) =========="
+    echo "1. $(t logs_50)"
+    echo "2. $(t logs_100)"
+    echo "3. $(t logs_follow)"
+    echo "0. $(t back)"
+    echo
+
+    read -rp "$(t prompt_choice): " c
+
+    case "$c" in
+      1) tail -n 50 "$LOG_FILE" ;;
+      2) tail -n 100 "$LOG_FILE" ;;
+      3) tail -f "$LOG_FILE" ;;
       0) return 0 ;;
       *) echo "$(t invalid_input)" ;;
     esac
@@ -2321,13 +2350,14 @@ chmod +x "$RUNNER" "$MANAGER" "$UNINSTALLER" "$WRAPPER_SHORT" "$WRAPPER_ALT"
 
 mkdir -p "$STATE_DIR"
 touch "$LOG_FILE"
+save_installer_config
 
 echo "$(it install_done)"
 echo "$(it commands)"
 echo "  xgeo                $(it open_menu)"
 echo "  3xui-geo            $(it open_menu)"
 echo "  xgeo uninstall      $(it one_click_uninstall)"
-echo "$(it scheduler_backend): $(it backend_${SCHEDULER_BACKEND})"
+echo "$(it scheduler_backend): $(installer_backend_name)"
 print_swap_notice
 echo
 echo "$(it start_menu)"
