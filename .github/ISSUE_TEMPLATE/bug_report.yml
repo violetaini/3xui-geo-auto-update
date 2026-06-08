@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible problem with 3xui Geo Updater
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: "Ubuntu 24.04, Debian 12, AlmaLinux 9, etc."
+    validations:
+      required: true
+  - type: input
+    id: scheduler
+    attributes:
+      label: Scheduler backend
+      placeholder: "cron or Supercronic"
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands run
+      render: bash
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove secrets, IPs, and private configuration before posting.
+      render: text
